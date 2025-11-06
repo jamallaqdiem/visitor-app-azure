@@ -1,23 +1,47 @@
 const express = require("express");
+const sql = require("mssql");
 
 /**
- * Creates and configures a router for handling visitor search.
+ * Creates and configures a router for handling visitor search using Azure SQL.
  *
- * @param {object} db - The SQLite database instance.
+ * @param {object} dbService - The Azure SQL database service wrapper (e.g., with executeQuery).
  * @returns {express.Router} - An Express router with the search endpoint.
  */
-function createSearchVisitorsRouter(db) {
+function createSearchVisitorsRouter(dbService,sql) {
   const router = express.Router();
 
   // Endpoint to search for visitors by name
-  router.get("/visitor-search", (req, res) => {
+  router.get("/visitor-search", async (req, res) => {
     const searchTerm = req.query.name;
     if (!searchTerm) {
       return res.status(400).json({ message: "Search term 'name' is required." });
     }
 
-    const searchTerms = searchTerm.split(' ');
-    let query = `
+    // 1. Prepare search terms and parameters
+    const searchTerms = searchTerm.split(" ").filter(t => t.length > 0);
+    const likeTerms = searchTerms.map(term => `%${term}%`);
+
+    if (searchTerms.length === 0) {
+        return res.status(400).json({ message: "Search term is required and cannot be empty." });
+    }
+
+    let whereClauses = [];
+    let inputs = [];
+
+    // Dynamically build conditions for each search term
+    searchTerms.forEach((_, index) => {
+        // Create a unique parameter name for each pair of LIKE conditions
+        const paramName = `term${index}`;
+        whereClauses.push(`(T1.first_name LIKE @${paramName} OR T1.last_name LIKE @${paramName})`);
+        
+        // Add the parameter to the inputs array
+        inputs.push({ name: paramName, type: sql.NVarChar, value: likeTerms[index] });
+    });
+
+    const whereClause = "WHERE " + whereClauses.join(' AND ');
+
+    // 2. Construct the main T-SQL query
+    const query = `
       SELECT
         T1.id,
         T1.first_name,
@@ -32,36 +56,37 @@ function createSearchVisitorsRouter(db) {
         T2.company_name,
         T2.type,
         T2.mandatory_acknowledgment_taken,
-        GROUP_CONCAT(json_object('full_name', T3.full_name, 'age', T3.age), ',') AS dependents_json
+        (
+            SELECT 
+                full_name, 
+                age 
+            FROM dependents AS T3 
+            WHERE T3.visit_id = T2.id
+            FOR JSON PATH
+        ) AS dependents_json
       FROM visitors AS T1
-      LEFT JOIN (
-        SELECT *, ROW_NUMBER() OVER(PARTITION BY visitor_id ORDER BY entry_time DESC) as rn
+      OUTER APPLY (
+        SELECT TOP 1 
+            id, known_as, address, phone_number, unit, reason_for_visit, company_name, type, mandatory_acknowledgment_taken
         FROM visits
-      ) AS T2 ON T1.id = T2.visitor_id AND T2.rn = 1
-      LEFT JOIN dependents AS T3 ON T2.id = T3.visit_id
-      WHERE `;
-    
-    // Add conditions for each search term
-    const likeTerms = [];
-    const conditions = searchTerms.map(term => {
-      likeTerms.push(`%${term}%`);
-      return `(T1.first_name LIKE ? OR T1.last_name LIKE ?)`;
-    });
+        WHERE visitor_id = T1.id
+        ORDER BY entry_time DESC
+      ) AS T2
+      ${whereClause}
+      ORDER BY T1.id -- Order results consistently
+    `;
 
-    query += conditions.join(' AND ');
-    query += ` GROUP BY T1.id`;
+    try {
+      // 3. Execute the query
+      const rows = await dbService.executeQuery(query, inputs);
 
-    db.all(query, likeTerms.flatMap(term => [term, term]), (err, rows) => {
-      if (err) {
-        console.error("SQL Error in visitor-search:", err.message);
-        return res.status(500).json({ error: err.message });
-      }
-      
+      // 4. Process results to clean up data and parse JSON dependents
       const resultsWithUrls = rows.map((row) => {
         let dependentsData = [];
+        
         if (row.dependents_json) {
           try {
-            dependentsData = JSON.parse(`[${row.dependents_json}]`);
+            dependentsData = JSON.parse(row.dependents_json);
           } catch (parseErr) {
             console.error("Failed to parse dependents JSON:", parseErr.message);
           }
@@ -69,14 +94,22 @@ function createSearchVisitorsRouter(db) {
         
         return {
           ...row,
-          photo_path: row.photo_path
+          // Construct the full photo URL for the client
+          photo: row.photo_path
             ? `${req.protocol}://${req.get("host")}/${row.photo_path}`
             : null,
           dependents: dependentsData,
+          // Remove raw photo path from the final output for cleaner data structure
+          photo_path: undefined,
+          dependents_json: undefined,
         };
       });
+
       res.status(200).json(resultsWithUrls);
-    });
+    } catch (err) {
+      console.error("Azure SQL Error in /visitor-search:", err.message);
+      res.status(500).json({ error: "Failed to search visitors due to a database error." });
+    }
   });
 
   return router;

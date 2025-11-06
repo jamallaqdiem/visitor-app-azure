@@ -1,134 +1,136 @@
 const request = require("supertest");
 const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
 const createVisitorsRouter = require("./visitors");
 
-// Global variables for the mock environment
-let mockDb;
+const API_ENDPOINT = '/visitors';
+const TEST_HOST = 'testserver.com';
+const TEST_PROTOCOL = 'http';
+
+let mockDbService; 
 let app;
+let originalConsoleError;
 
-// Helper function to promisify db.run
-const runDb = (sql, params = []) => {
-    return new Promise((resolve, reject) => {
-        mockDb.run(sql, params, function(err) {
-            if (err) return reject(err);
-            resolve(this);
-        });
-    });
-};
+// Mock data structure that the SQL query returns, including the JSON string for dependents
+const MOCK_DB_DATA = [
+    {
+        id: 101,
+        first_name: "Jane",
+        last_name: "Doe",
+        photo_path: "photos/jane.jpg",
+        is_banned: false,
+        entry_time: new Date().toISOString(),
+        known_as: "Janie",
+        reason_for_visit: "Food Parcel",
+        additional_dependents: JSON.stringify([
+            { full_name: "Kid One", age: 8 },
+            { full_name: "Kid Two", age: 12 }
+        ]),
+        // Include other fields as null/undefined for simplicity
+        exit_time: null, address: null, phone_number: null, unit: null, company_name: null, type: null, mandatory_acknowledgment_taken: null,
+    },
+    {
+        id: 102,
+        first_name: "John",
+        last_name: "Smith",
+        photo_path: null, // Test case for no photo
+        is_banned: true, // Should still show banned visitors if they are signed in
+        entry_time: new Date().toISOString(),
+        known_as: "Johnny",
+        reason_for_visit: "Shelter",
+        additional_dependents: null, // Test case for no dependents
+        exit_time: null, address: null, phone_number: null, unit: null, company_name: null, type: null, mandatory_acknowledgment_taken: null,
+    },
+];
 
-// Setup: Create the database and initialize the app before any tests run
-beforeAll(async () => {
-    mockDb = new sqlite3.Database(":memory:");
+beforeEach(() => {
+    // Suppress console.error output for a clean test run
+    originalConsoleError = console.error;
+    console.error = jest.fn();
 
-    await runDb(`CREATE TABLE visitors (
-        id INTEGER PRIMARY KEY,
-        first_name TEXT NOT NULL,
-        last_name TEXT NOT NULL,
-        photo_path TEXT,
-        is_banned INTEGER DEFAULT 0
-    )`);
-    await runDb(`CREATE TABLE visits (
-        id INTEGER PRIMARY KEY,
-        visitor_id INTEGER NOT NULL,
-        entry_time TEXT NOT NULL,
-        exit_time TEXT,
-        known_as TEXT,
-        address TEXT,
-        phone_number TEXT,
-        unit TEXT,
-        reason_for_visit TEXT,
-        company_name TEXT,
-        type TEXT,
-        mandatory_acknowledgment_taken TEXT,
-        FOREIGN KEY (visitor_id) REFERENCES visitors(id)
-    )`);
-    await runDb(`CREATE TABLE dependents (
-        id INTEGER PRIMARY KEY,
-        visit_id INTEGER NOT NULL,
-        full_name TEXT NOT NULL,
-        age INTEGER,
-        FOREIGN KEY (visit_id) REFERENCES visits(id)
-    )`);
+    // Reset the mock before each test
+    mockDbService = {
+        executeQuery: jest.fn(),
+    };
 
-    // 2. Initialize the Express app and router
+    // Create the mock Express app
     app = express();
-    app.use(express.json()); 
-    app.use("/", createVisitorsRouter(mockDb));
+    
+    // Inject mock host/protocol properties needed for photo URL construction 
+    app.use((req, res, next) => {
+        req.protocol = TEST_PROTOCOL;
+        req.get = (header) => {
+            if (header === 'host') return TEST_HOST;
+            return undefined;
+        };
+        next();
+    });
+
+    // Attach the router
+    const visitorsRouter = createVisitorsRouter(mockDbService); 
+    app.use("/", visitorsRouter); 
 });
 
-// Clean up the test database after each test
-afterEach(async () => {
-    await runDb("DELETE FROM dependents");
-    await runDb("DELETE FROM visits");
-    await runDb("DELETE FROM visitors");
+afterEach(() => {
+    // Restore console.error
+    console.error = originalConsoleError;
 });
 
-// Close the database connection after all tests
-afterAll((done) => {
-    mockDb.close((err) => {
-        if (err) console.error(err.message);
-        done();
-    });
-});
 
-describe("GET /visitors", () => {
-    test("should return an empty array if no visitors are signed in", async () => {
-        const response = await request(app).get("/visitors");
-        expect(response.status).toBe(200);
-        expect(response.body).toEqual([]);
-    });
+describe('GET /visitors', () => {
 
-    test("should return only currently signed-in visitors", async () => {
-        // Insert a signed-in visitor
-        const result = await runDb(`INSERT INTO visitors (first_name, last_name) VALUES ('Jane', 'Doe')`);
-        const visitorId = result.lastID;
-        await runDb(`INSERT INTO visits (visitor_id, entry_time, exit_time) VALUES (?, ?, NULL)`, [visitorId, new Date().toISOString()]);
+    // --- Test 1: Successful fetch and data transformation ---
+    test('should return 200 with correctly formatted active visitor results, including parsed dependents and full URLs', async () => {
+        // Mock the database to return the active visitor data
+        mockDbService.executeQuery.mockResolvedValue({ recordset: MOCK_DB_DATA });
 
-        // Make the request and verify the response
-        const response = await request(app).get("/visitors");
-
-        expect(response.status).toBe(200);
-        expect(response.body).toHaveLength(1);
-        expect(response.body[0].first_name).toBe("Jane");
-    });
-
-    test("should only return visitors with a NULL exit_time", async () => {
-        // Insert a signed-in visitor
-        let result = await runDb(`INSERT INTO visitors (first_name, last_name) VALUES ('Jane', 'Doe')`);
-        let visitorId = result.lastID;
-        await runDb(`INSERT INTO visits (visitor_id, entry_time, exit_time) VALUES (?, ?, NULL)`, [visitorId, new Date().toISOString()]);
-
-        // Insert a signed-out visitor
-        result = await runDb(`INSERT INTO visitors (first_name, last_name) VALUES ('John', 'Smith')`);
-        visitorId = result.lastID;
-        await runDb(`INSERT INTO visits (visitor_id, entry_time, exit_time) VALUES (?, ?, ?)`, [visitorId, new Date().toISOString(), new Date().toISOString()]);
-
-        // Make the request and verify the response
-        const response = await request(app).get("/visitors");
-
-        expect(response.status).toBe(200);
-        expect(response.body).toHaveLength(1);
-        expect(response.body[0].first_name).toBe("Jane");
-    });
-
-    test("should return visitors sorted by entry_time in descending order", async () => {
-        // Insert an earlier visitor
-        let result = await runDb(`INSERT INTO visitors (first_name, last_name) VALUES ('Early', 'Bird')`);
-        let visitorId = result.lastID;
-        await runDb(`INSERT INTO visits (visitor_id, entry_time, exit_time) VALUES (?, ?, NULL)`, [visitorId, "2023-01-01T10:00:00Z"]);
-
-        // Insert a later visitor
-        result = await runDb(`INSERT INTO visitors (first_name, last_name) VALUES ('Late', 'Comer')`);
-        visitorId = result.lastID;
-        await runDb(`INSERT INTO visits (visitor_id, entry_time, exit_time) VALUES (?, ?, NULL)`, [visitorId, "2023-01-01T11:00:00Z"]);
-
-        // Make the request and verify the order
-        const response = await request(app).get("/visitors");
+        const response = await request(app).get(API_ENDPOINT);
 
         expect(response.status).toBe(200);
         expect(response.body).toHaveLength(2);
-        expect(response.body[0].first_name).toBe("Late");
-        expect(response.body[1].first_name).toBe("Early");
+
+        // Check the first visitor (with photo and dependents)
+        const jane = response.body.find(v => v.id === 101);
+        expect(jane.photo).toBe(`${TEST_PROTOCOL}://${TEST_HOST}/photos/jane.jpg`);
+        expect(jane.dependents).toHaveLength(2);
+        expect(jane.dependents[0].full_name).toBe("Kid One");
+        expect(jane.photo_path).toBeUndefined(); // Check cleanup
+        expect(jane.additional_dependents).toBeUndefined(); // Check cleanup
+
+        // Check the second visitor (no photo, no dependents)
+        const john = response.body.find(v => v.id === 102);
+        expect(john.photo).toBeNull();
+        expect(john.dependents).toHaveLength(0);
+
+        // Verify that executeQuery was called once with a non-empty string
+        expect(mockDbService.executeQuery).toHaveBeenCalledTimes(1);
+        expect(mockDbService.executeQuery.mock.calls[0][0]).toContain('SELECT');
+        expect(mockDbService.executeQuery.mock.calls[0][0]).toContain('WHERE T2.exit_time IS NULL');
+    });
+
+    // --- Test 2: Empty results ---
+    test('should return an empty array if no visitors are signed in', async () => {
+        // Mock the database to return an empty recordset
+        mockDbService.executeQuery.mockResolvedValue({ recordset: [] });
+
+        const response = await request(app).get(API_ENDPOINT);
+
+        expect(response.status).toBe(200);
+        expect(response.body).toHaveLength(0);
+        expect(mockDbService.executeQuery).toHaveBeenCalledTimes(1);
+    });
+
+    // --- Test 3: Database error handling ---
+    test('should return 500 on a database error', async () => {
+        const errorMessage = "Azure connection timeout";
+        mockDbService.executeQuery.mockRejectedValue(new Error(errorMessage));
+
+        const response = await request(app).get(API_ENDPOINT);
+
+        expect(response.status).toBe(500);
+        expect(response.body).toHaveProperty('error', "Failed to retrieve active visitor data.");
+        expect(mockDbService.executeQuery).toHaveBeenCalledTimes(1);
+        
+        // Assert that the router's error handler was called (but not logged to test output)
+        expect(console.error).toHaveBeenCalled();
     });
 });

@@ -1,171 +1,201 @@
 const request = require("supertest");
 const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
 const createHistoryRouter = require("./display_history");
 
-// --- Mock Database Setup ---
-const mockDb = new sqlite3.Database(':memory:');
-mockDb.serialize(() => {
-    mockDb.run(`CREATE TABLE visitors (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        first_name TEXT,
-        last_name TEXT,
-        photo_path TEXT,
-        is_banned BOOLEAN DEFAULT 0
-    )`);
-    mockDb.run(`CREATE TABLE visits (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        visitor_id INTEGER,
-        known_as TEXT,
-        entry_time TEXT NOT NULL,
-        exit_time TEXT,
-        address TEXT,
-        phone_number TEXT,
-        unit TEXT,
-        reason_for_visit TEXT,
-        company_name TEXT,
-        type TEXT,
-        mandatory_acknowledgment_taken,
-        FOREIGN KEY (visitor_id) REFERENCES visitors(id)
-    )`);
-    mockDb.run(`CREATE TABLE dependents (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        full_name TEXT,
-        age INTEGER,
-        visit_id INTEGER,
-        FOREIGN KEY (visit_id) REFERENCES visits(id)
-    )`);
-});
+// Mock environment variable and SQL module
+const MOCK_MASTER_PASSWORD = "test-history-password";
+process.env.MASTER_PASSWORD2 = MOCK_MASTER_PASSWORD;
 
-// Create a mock Express app to test the router
-const app = express();
-app.use(express.json());
-app.use((req, res, next) => {
-    req.protocol = 'http';
-    req.get = (header) => (header === 'host' ? 'test:3001' : null);
-    next();
-});
-app.use("/", createHistoryRouter(mockDb));
+jest.mock("mssql", () => ({
+    NVarChar: "NVarChar",
+    Int: "Int",
+}));
 
-// --- Helper function to insert test data ---
-async function insertTestData() {
-    // Visitor 1: Alice Smith (with dependents)
-    const v1 = await new Promise((resolve, reject) => {
-        mockDb.run(`INSERT INTO visitors (first_name, last_name, is_banned) VALUES ('Alice', 'Smith', 0)`, function(err) {
-            if (err) return reject(err);
-            resolve(this.lastID);
-        });
-    });
+// Mock the date to ensure deterministic end_date calculation for filtering tests
+const MOCK_DATE = '2025-01-01';
+const MOCK_END_OF_DAY = `${MOCK_DATE}T23:59:59.999Z`;
 
-    // Visit 1 for Alice (has dependents)
-    const visit1 = await new Promise((resolve, reject) => {
-        mockDb.run(`INSERT INTO visits (visitor_id, entry_time, type, unit) VALUES (?, '2024-05-01T10:00:00Z', 'Personal', 'A101')`, [v1], function(err) {
-            if (err) return reject(err);
-            resolve(this.lastID);
+// Helper function to set up the Express app for testing
+function setupTestApp(dbService) {
+    const app = express();
+    app.use(express.json());
+    // Use a mock protocol/host for photo URL testing
+    app.use((req, res, next) => {
+        req.protocol = 'http';
+        req.get = jest.fn((header) => {
+            if (header === 'host') return 'localhost:3000';
+            return null;
         });
+        next();
     });
-    await new Promise((resolve, reject) => {
-        mockDb.run(`INSERT INTO dependents (full_name, age, visit_id) VALUES ('Kid A', 5, ?), ('Kid B', 8, ?)`, [visit1, visit1], (err) => {
-            if (err) return reject(err);
-            resolve();
-        });
-    });
-
-    // Visitor 2: Bob Johnson (banned, no dependents)
-    const v2 = await new Promise((resolve, reject) => {
-        mockDb.run(`INSERT INTO visitors (first_name, last_name, is_banned) VALUES ('Bob', 'Johnson', 1)`, function(err) {
-            if (err) return reject(err);
-            resolve(this.lastID);
-        });
-    });
-    // Visit 2 for Bob
-    await new Promise((resolve, reject) => {
-        mockDb.run(`INSERT INTO visits (visitor_id, entry_time, type, unit, exit_time) VALUES (?, '2024-05-02T11:00:00Z', 'Contractor', 'B202', '2024-05-02T12:00:00Z')`, [v2], function(err) {
-            if (err) return reject(err);
-            resolve(this.lastID);
-        });
-    });
+    app.use("/", createHistoryRouter(dbService));
+    return app;
 }
 
-// --- Test Lifecycle Hooks ---
-beforeEach(insertTestData); // Insert fresh data before each test
+describe("History Router Endpoints", () => {
+    let mockDbService;
+    let app;
+    let consoleErrorSpy;
+    let consoleWarnSpy;
 
-afterEach(async () => {
-    // Clean up tables
-    await new Promise((resolve) => mockDb.run(`DELETE FROM dependents`, resolve));
-    await new Promise((resolve) => mockDb.run(`DELETE FROM visits`, resolve));
-    await new Promise((resolve) => mockDb.run(`DELETE FROM visitors`, resolve));
-});
+    beforeEach(() => {
+        // Suppress console logging during tests
+        consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-afterAll((done) => {
-    mockDb.close((err) => {
-        if (err) console.error(err.message);
-        done();
+        // Setup the mock dbService
+        mockDbService = {
+            executeQuery: jest.fn(),
+        };
+
+        app = setupTestApp(mockDbService);
     });
-});
 
-// --- Test Suite ---
-describe('GET /history', () => {
-    test('should retrieve all history records with correct structure and sorting', async () => {
-        const response = await request(app).get('/history');
+    afterEach(() => {
+        consoleErrorSpy.mockRestore();
+        consoleWarnSpy.mockRestore();
+        jest.restoreAllMocks(); 
+    });
 
-        expect(response.status).toBe(200);
-        expect(response.body).toHaveLength(2);
+    // --- MOCK DATA ---
+    const mockVisitRow = {
+        visitor_id: 1,
+        first_name: "John",
+        last_name: "Doe",
+        photo_path: "photos/123.jpg",
+        is_banned: 0,
+        visit_id: 100,
+        entry_time: new Date().toISOString(),
+        address: "123 Main St",
+        additional_dependents_json: '[{"full_name":"Jane Doe","age":5}]',
+    };
 
-        // Check sorting (newest first, based on entry_time)
-        expect(response.body[0].first_name).toBe('Bob'); // 2024-05-02
-        expect(response.body[1].first_name).toBe('Alice'); // 2024-05-01
+    // =================================================================
+    // POST /authorize-history Tests
+    // =================================================================
 
-        // Check complex JSON dependent parsing on the Alice record (index 1)
-        const aliceRecord = response.body.find(r => r.first_name === 'Alice');
-        expect(aliceRecord.dependents).toHaveLength(2);
-        expect(aliceRecord.dependents).toEqual(expect.arrayContaining([
-            { full_name: 'Kid A', age: 5 },
-            { full_name: 'Kid B', age: 8 }
-        ]));
+    describe("POST /authorize-history", () => {
+        test("should return 200 for correct password", async () => {
+            const response = await request(app)
+                .post("/authorize-history")
+                .send({ password: MOCK_MASTER_PASSWORD })
+                .expect(200);
+
+            expect(response.body.success).toBe(true);
+            expect(response.body.message).toBe("Authorization successful.");
+        });
+
+        test("should return 403 for incorrect password", async () => {
+            const response = await request(app)
+                .post("/authorize-history")
+                .send({ password: "wrong-password" })
+                .expect(403);
+
+            expect(response.body.message).toBe("Incorrect password.");
+        });
+    });
+
+    // GET /history Tests
+   
+    describe("GET /history", () => {
+        // --- Test 1: No Filters, Success and Data Mapping ---
+        test("should return 200 with all historical data and correctly map fields", async () => {
+            // Setup mock to return one row
+            mockDbService.executeQuery.mockResolvedValue([mockVisitRow]);
+
+            const response = await request(app).get("/history").expect(200);
+
+            const querySql = mockDbService.executeQuery.mock.calls[0][0];
+
+            expect(mockDbService.executeQuery).toHaveBeenCalledWith(querySql, []);
+            // Assert the response structure and data mapping
+            expect(response.body).toHaveLength(1);
+            const result = response.body[0];
+
+            // 1. Photo URL 
+            expect(result.photo).toBe("http://localhost:3000/photos/123.jpg");
+            // 2. Dependents JSON 
+            expect(result.dependents).toEqual([{ full_name: "Jane Doe", age: 5 }]);
+            // 3. Raw fields removed from final output
+            expect(result.photo_path).toBeUndefined();
+            expect(result.additional_dependents_json).toBeUndefined();
+        });
         
-        // Ensure cleanup fields are removed
-        expect(aliceRecord.additional_dependents_json).toBeUndefined();
-        expect(aliceRecord.photo_path).toBeUndefined();
+        // --- Test 2: Search Filter ---
+        test("should query with a search filter on first_name/last_name", async () => {
+            // Setup mock for success
+            mockDbService.executeQuery.mockResolvedValue([]);
 
-        // Check basic fields
-        expect(aliceRecord.unit).toBe('A101');
-        expect(aliceRecord.is_banned).toBe(0);
-    });
+            const searchText = "john";
+            await request(app).get(`/history?search=${searchText}`).expect(200);
 
-    test('should filter records by name search query (case-insensitive)', async () => {
-        const response = await request(app).get('/history?search=alice');
+            // Assert the query structure
+            const querySql = mockDbService.executeQuery.mock.calls[0][0];
+            const queryParams = mockDbService.executeQuery.mock.calls[0][1];
 
-        expect(response.status).toBe(200);
-        expect(response.body).toHaveLength(1);
-        expect(response.body[0].first_name).toBe('Alice');
+            expect(querySql).toContain(
+                "(LOWER(T1.first_name) LIKE @searchParam OR LOWER(T1.last_name) LIKE @searchParam)"
+            );
+            expect(queryParams).toEqual([
+                { name: "searchParam", type: "NVarChar", value: `%${searchText}%` },
+            ]);
+        });
 
-        const response2 = await request(app).get('/history?search=JOHNSON');
-        expect(response2.status).toBe(200);
-        expect(response2.body).toHaveLength(1);
-        expect(response2.body[0].first_name).toBe('Bob');
-    });
+        // --- Test 3: Date Range Filter ---
+        test("should query with start_date and end_date filters", async () => {
+            // Setup mock for success
+            mockDbService.executeQuery.mockResolvedValue([]);
 
-    test('should filter records by date range (start_date)', async () => {
-        const response = await request(app).get('/history?start_date=2024-05-02');
+            await request(app)
+                .get(`/history?start_date=${MOCK_DATE}&end_date=${MOCK_DATE}`)
+                .expect(200);
 
-        expect(response.status).toBe(200);
-        expect(response.body).toHaveLength(1);
-        expect(response.body[0].first_name).toBe('Bob');
-    });
+            // Assert the query structure
+            const querySql = mockDbService.executeQuery.mock.calls[0][0];
+            const queryParams = mockDbService.executeQuery.mock.calls[0][1];
 
-    test('should filter records by date range (end_date)', async () => {
-        const response = await request(app).get('/history?end_date=2024-05-01');
-
-        expect(response.status).toBe(200);
-        expect(response.body).toHaveLength(1);
-        expect(response.body[0].first_name).toBe('Alice');
-    });
-
-    test('should return empty array if no records match', async () => {
-        const response = await request(app).get('/history?search=nonexistentname');
+            expect(querySql).toContain("T2.entry_time >= @startDate AND T2.entry_time <= @endDate");
+            expect(queryParams).toEqual([
+                { name: "startDate", type: "NVarChar", value: MOCK_DATE },
+                { name: "endDate", type: "NVarChar", value: MOCK_END_OF_DAY },
+            ]);
+        });
         
-        expect(response.status).toBe(200);
-        expect(response.body).toHaveLength(0);
+        // --- Test 4: Database Error ---
+        test("should return 500 on a database query error", async () => {
+            const dbError = new Error("Connection failed during GET.");
+            // Setup mock to simulate failure
+            mockDbService.executeQuery.mockRejectedValue(dbError);
+
+            const response = await request(app).get("/history").expect(500);
+
+            // Check response body
+            expect(response.body.error).toBe(
+                "Failed to retrieve historical data from the database."
+            );
+            
+            // Check that the error was logged internally
+            expect(consoleErrorSpy).toHaveBeenCalledWith(
+                "Azure SQL Error in GET /history:",
+                dbError.message
+            );
+        });
+        
+        // --- Test 5: Invalid JSON Dependent Data ---
+        test("should handle invalid JSON dependent data gracefully and log a warning", async () => {
+            // Setup mock to return a row with malformed JSON
+            const malformedRow = {
+                ...mockVisitRow,
+                additional_dependents_json: '{ "key": "value", }', // Invalid trailing comma
+            };
+            mockDbService.executeQuery.mockResolvedValue([malformedRow]);
+
+            const response = await request(app).get("/history").expect(200);
+
+            // The dependents array should be empty on failure, not the raw JSON string
+            expect(response.body[0].dependents).toEqual([]); 
+            // Warning should be logged
+            expect(consoleWarnSpy).toHaveBeenCalled();
+        });
     });
 });

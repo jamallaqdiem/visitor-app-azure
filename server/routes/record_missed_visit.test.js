@@ -1,210 +1,227 @@
-const request = require("supertest");
-const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
-const createMissedVisitRouter = require("./record_missed_visit"); 
+const request = require('supertest');
+const express = require('express');
+const createMissedVisitRouter = require('./record_missed_visit'); 
 
-// --- Helper Functions ---
+// --- Mocking Setup ---
 
-/**
- * Generates an ISO 8601 timestamp one hour in the past.
- */
-function getPastEntryTime() {
-    const now = new Date();
-    // Set to 2 hours ago to ensure it is safely in the past
-    now.setHours(now.getHours() - 2); 
-    return now.toISOString();
-}
-
-/**
- * Generates an ISO 8601 timestamp one hour in the future.
- */
-function getFutureEntryTime() {
-    const now = new Date();
-    now.setHours(now.getHours() + 1); 
-    return now.toISOString();
-}
-
-/**
- * Helper to run async database operations and get lastID.
- */
-const runDB = (dbInstance, sql, params = []) => new Promise((resolve, reject) => {
-    dbInstance.run(sql, params, function(err) {
-        if (err) return reject(err);
-        resolve(this.lastID);
-    });
-});
-
-// --- Mock Database Setup ---
-
-// Mock the database in memory for testing
-const mockDb = new sqlite3.Database(':memory:');
-mockDb.serialize(() => {
-    // 1. Visitors table 
-    mockDb.run(`CREATE TABLE visitors (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        first_name TEXT,
-        last_name TEXT,
-        is_banned BOOLEAN DEFAULT 0
-    )`);
-    // 2. Visits table (full schema match)
-    mockDb.run(`CREATE TABLE visits (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        visitor_id INTEGER NOT NULL,
-        entry_time TEXT NOT NULL,
-        exit_time TEXT,
-        known_as TEXT,
-        address TEXT,
-        phone_number TEXT,
-        unit TEXT NOT NULL,
-        reason_for_visit TEXT,
-        type TEXT NOT NULL,
-        company_name TEXT,
-        mandatory_acknowledgment_taken TEXT
-    )`);
-    // 3. Dependents table (included for completeness, though not used in this router)
-    mockDb.run(`CREATE TABLE dependents (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        full_name TEXT,
-        age INTEGER,
-        visit_id INTEGER
-    )`);
-});
-
-// Create a mock Express app to test the router
-const app = express();
-app.use(express.json()); // Middleware to parse JSON body
-app.use("/", createMissedVisitRouter(mockDb)); // Attach the router
-
-// --- Test Setup and Teardown ---
-
-let testVisitorId;
-// Sample data matching the required NOT NULL fields
-const sampleVisitDetails = {
-    known_as: 'miky',
-    address: '700 london road Portsmouth Po70 3as',
-    unit: '101A',
-    phone_number: '555-1212',
-    type: 'Guest',
-    reason_for_visit: 'Meeting',
-    mandatory_acknowledgment_taken: 'text'
+const mockSqlTypes = {
+    Int: jest.fn(),
+    NVarChar: jest.fn(),
 };
 
-beforeEach(async () => {
-    // 1. Insert a visitor
-    testVisitorId = await runDB(mockDb, `INSERT INTO visitors (first_name, last_name) VALUES (?, ?)`, ['Test', 'Visitor']);
-    
-    // 2. Insert a valid, complete previous visit record.
-    await runDB(mockDb, `
-        INSERT INTO visits (visitor_id, entry_time, exit_time, known_as, address, phone_number, unit, reason_for_visit, type, mandatory_acknowledgment_taken) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
-        [
-            testVisitorId, 
-            new Date(Date.now() - 3600000).toISOString(), // Entry: 1 hour ago
-            new Date(Date.now() - 1800000).toISOString(), // Exit: 30 minutes ago
-            sampleVisitDetails.known_as,
-            sampleVisitDetails.address,
-            sampleVisitDetails.phone_number,
-            sampleVisitDetails.unit,
-            sampleVisitDetails.reason_for_visit,
-            sampleVisitDetails.type,
-            sampleVisitDetails.mandatory_acknowledgment_taken
-        ]);
-});
+// Mock the core database service
+const mockDbService = {
+    // Default mock response: empty recordset
+    executeQuery: jest.fn().mockResolvedValue({ recordset: [] }), 
+};
 
-afterEach(async () => {
-    // Clean up all tables
-    await new Promise((resolve, reject) => {
-        mockDb.run(`DELETE FROM dependents`, (err) => {
-            if (err) return reject(err);
-            mockDb.run(`DELETE FROM visits`, (err) => {
-                if (err) return reject(err);
-                mockDb.run(`DELETE FROM visitors`, (err) => {
-                    if (err) return reject(err);
-                    resolve();
-                });
-            });
-        });
+// Fixed timestamps for predictable results in the tests.
+const MOCK_CURRENT_TIMESTAMP = 1700000000000; 
+const MOCK_PAST_ISO = '2023-11-13T13:06:40.000Z'; 
+const ONE_HOUR_MS = 3600000; 
+
+const TEST_VISITOR_ID = 101;
+const GOOD_BODY = { visitorId: TEST_VISITOR_ID, pastEntryTime: MOCK_PAST_ISO };
+
+// Variable to hold the spy instance so we can restore it correctly later
+let dateNowSpy;
+
+function setupTestApp() {
+    const app = express();
+    app.use(express.json());
+    // Pass the mock types to the router logic for parameter binding
+    const mockRouter = createMissedVisitRouter({
+        ...mockDbService,
+        sql: mockSqlTypes
     });
-});
-
-afterAll((done) => {
-    mockDb.close((err) => {
-        if (err) console.error(err.message);
-        done();
-    });
-});
-
-// --- Test Suite ---
+    app.use('/', mockRouter);
+    return app;
+}
 
 describe('POST /record-missed-visit', () => {
-    const API_ENDPOINT = '/record-missed-visit';
+    let app;
+    let consoleErrorSpy;
 
-    test('should successfully record a missed visit with a past time and return 200', async () => {
-        const pastTime = getPastEntryTime();
-        
-        const response = await request(app)
-            .post(API_ENDPOINT)
-            .send({ 
-                visitorId: testVisitorId, 
-                pastEntryTime: pastTime 
-            });
-
-        // 1. Check HTTP Status
-        expect(response.status).toBe(200);
-        
-        // 2. Check response message
-        expect(response.body).toHaveProperty('message');
-        expect(response.body.message).toMatch("Visitor Entry Time Corrected & Sing it Out");
-
-        // 3. Verify database insertion
-        const dbResult = await new Promise((resolve, reject) => {
-            // Check for the newly created visit
-            mockDb.all(`SELECT entry_time, exit_time, unit, type FROM visits WHERE visitor_id = ? ORDER BY entry_time DESC`, [testVisitorId], (err, rows) => {
-                if (err) return reject(err);
-                resolve(rows);
-            });
-        });
-        
-        // Expect two rows (the setup visit + the new missed visit)
-        expect(dbResult.length).toBe(2);
-        
-        // Check the newest row (the missed visit)
-        const newestVisit = dbResult[0];
-        // Ensure the unit and type were correctly copied from the previous visit
-        expect(newestVisit.unit).toBe(sampleVisitDetails.unit);
-        expect(newestVisit.type).toBe(sampleVisitDetails.type);
+    beforeAll(() => {
+        dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(MOCK_CURRENT_TIMESTAMP);
     });
 
-    test('should return 400 if visitor ID is missing', async () => {
-        const response = await request(app)
-            .post(API_ENDPOINT)
-            .send({ pastEntryTime: getPastEntryTime() }); // Missing visitorId
-
-        expect(response.status).toBe(400);
-        expect(response.body).toHaveProperty('message', 'Missing visitor ID or required entry time.');
+    beforeEach(() => {
+        mockDbService.executeQuery.mockClear(); // reset before each unit test
+        // Set up spy for console.error
+        consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        app = setupTestApp(); // clean app express each test time
     });
 
-    test('should return 400 if entry time is missing', async () => {
-        const response = await request(app)
-            .post(API_ENDPOINT)
-            .send({ visitorId: testVisitorId }); // Missing pastEntryTime
-
-        expect(response.status).toBe(400);
-        expect(response.body).toHaveProperty('message', 'Missing visitor ID or required entry time.');
+    afterEach(() => {
+        consoleErrorSpy.mockRestore(); 
     });
-    
-    test('should return 400 if entry time is in the future', async () => {
-        const futureTime = getFutureEntryTime();
+
+    afterAll(() => {
+        // Correctly restore Date.now mock ensuring other tests aren't using the fixed mocked time
+        if (dateNowSpy) {
+            dateNowSpy.mockRestore(); 
+        }
+    });
+
+    // --- Validation Tests (400) ---
+    test('should return 400 if visitorId is missing', async () => {
+        await request(app)
+            .post('/record-missed-visit')
+            .send({ pastEntryTime: MOCK_PAST_ISO })
+            .expect('Content-Type', /json/)
+            .expect(400, { message: "Missing visitor ID or required entry time." });
+    });
+
+    test('should return 400 if pastEntryTime is missing', async () => {
+        await request(app)
+            .post('/record-missed-visit')
+            .send({ visitorId: TEST_VISITOR_ID })
+            .expect('Content-Type', /json/)
+            .expect(400, { message: "Missing visitor ID or required entry time." });
+    });
+
+    test('should return 400 if pastEntryTime is an invalid date string', async () => {
+        await request(app)
+            .post('/record-missed-visit')
+            .send({ visitorId: TEST_VISITOR_ID, pastEntryTime: 'not-a-real-date' })
+            .expect('Content-Type', /json/)
+            .expect(400, { message: "Invalid entry time. It must be a valid date/time and occur before the current exit time." });
+    });
+
+    test('should return 400 if pastEntryTime is in the future or equals the current time', async () => {
+        // Using the constant mock value to generate a time that is in the future
+        const FUTURE_TIME_MS = MOCK_CURRENT_TIMESTAMP + ONE_HOUR_MS;
+        const FUTURE_TIME = new Date(FUTURE_TIME_MS).toISOString(); 
+        
+        await request(app)
+            .post('/record-missed-visit')
+            .send({ visitorId: TEST_VISITOR_ID, pastEntryTime: FUTURE_TIME })
+            .expect('Content-Type', /json/)
+            .expect(400, { message: "Invalid entry time. It must be a valid date/time and occur before the current exit time." });
+    });
+
+
+    // --- Success Tests (200) ---
+
+    test('should record the missed visit using details from the last visit and return 200', async () => {
+        const mockLastVisit = [{
+            known_as: 'Jamie',
+            address: '123 Main St',
+            phone_number: '555-1234',
+            unit: 'Admin',
+            reason_for_visit: 'Meeting',
+            type: 'Staff',
+            company_name: 'SA HQ',
+            mandatory_acknowledgment_taken: 'Yes'
+        }];
+        
+        // Mock DB calls: 1. SELECT returns last visit data. 2. INSERT succeeds.
+        mockDbService.executeQuery.mockResolvedValueOnce({ recordset: mockLastVisit }); 
+        mockDbService.executeQuery.mockResolvedValueOnce({}); 
 
         const response = await request(app)
-            .post(API_ENDPOINT)
-            .send({ 
-                visitorId: testVisitorId, 
-                pastEntryTime: futureTime 
-            });
+            .post('/record-missed-visit')
+            .send(GOOD_BODY)
+            .expect('Content-Type', /json/)
+            .expect(200);
 
-        expect(response.status).toBe(400);
-        expect(response.body).toHaveProperty('message');
-        expect(response.body.message).toContain('Invalid entry time. It must be a valid date/time and occur before the current exit time.');
+        expect(response.body.message).toBe("Visitor Entry Time Corrected & Signed Out");
+        expect(response.body.entry).toBe(MOCK_PAST_ISO);
+        // Relax assertion for the response body exit time value
+        expect(response.body.exit).toEqual(expect.any(String)); 
+        expect(mockDbService.executeQuery).toHaveBeenCalledTimes(2); // 2 database calls were made(SELECT, INSERT)
+
+        // Assert the second call (INSERT) has correct, non-default parameters
+        expect(mockDbService.executeQuery).toHaveBeenNthCalledWith(
+            2,
+            expect.stringContaining('INSERT INTO visits'),
+            [
+                { name: "visitorId", type: expect.any(Function), value: TEST_VISITOR_ID },
+                { name: "entryTime", type: expect.any(Function), value: MOCK_PAST_ISO },
+                // Relax assertion for the DB input exit time value
+                { name: "exitTime", type: expect.any(Function), value: expect.any(String) }, 
+                { name: "knownAs", type: expect.any(Function), value: 'Jamie' },
+                { name: "address", type: expect.any(Function), value: '123 Main St' },
+                { name: "phoneNumber", type: expect.any(Function), value: '555-1234' },
+                { name: "unit", type: expect.any(Function), value: 'Admin' },
+                { name: "reasonForVisit", type: expect.any(Function), value: 'Meeting' },
+                { name: "type", type: expect.any(Function), value: 'Staff' }, 
+                { name: "companyName", type: expect.any(Function), value: 'SA HQ' },
+                { name: "mandatoryTaken", type: expect.any(Function), value: 'Yes' }
+            ]
+        );
+        expect(consoleErrorSpy).not.toHaveBeenCalled();// No server-side errors were logged during the insert
+    });
+
+    test('should record the missed visit using default details if no previous visit exists', async () => {
+        // Mock DB calls: 1. SELECT returns empty. 2. INSERT succeeds.
+        mockDbService.executeQuery.mockResolvedValueOnce({ recordset: [] }); 
+        mockDbService.executeQuery.mockResolvedValueOnce({}); 
+
+        await request(app)
+            .post('/record-missed-visit')
+            .send(GOOD_BODY)
+            .expect(200);
+
+        // Assert the second call INSERT has correct default parameters
+        expect(mockDbService.executeQuery).toHaveBeenNthCalledWith(
+            2,
+            expect.stringContaining('INSERT INTO visits'),
+            [
+                { name: "visitorId", type: expect.any(Function), value: TEST_VISITOR_ID },
+                { name: "entryTime", type: expect.any(Function), value: MOCK_PAST_ISO },
+                // Relax assertion for the DB input exit time value
+                { name: "exitTime", type: expect.any(Function), value: expect.any(String) }, 
+                { name: "knownAs", type: expect.any(Function), value: '--' }, // Default
+                { name: "address", type: expect.any(Function), value: '--' }, // Default
+                { name: "phoneNumber", type: expect.any(Function), value: null }, // Default
+                { name: "unit", type: expect.any(Function), value: "--" }, // Default
+                { name: "reasonForVisit", type: expect.any(Function), value: null }, // Default
+                { name: "type", type: expect.any(Function), value: "Visitor" }, // Default
+                { name: "companyName", type: expect.any(Function), value: null }, // Default
+                { name: "mandatoryTaken", type: expect.any(Function), value: '--' } // Default
+            ]
+        );
+        expect(consoleErrorSpy).not.toHaveBeenCalled();
+    });
+
+    // --- Failure Tests (500) ---
+
+    test('should return 500 if the initial SELECT query fails', async () => {
+        const dbError = new Error("Connection failed on SELECT");
+        mockDbService.executeQuery.mockRejectedValueOnce(dbError); 
+
+        const response = await request(app)
+            .post('/record-missed-visit')
+            .send(GOOD_BODY)
+            .expect('Content-Type', /json/)
+            .expect(500);
+
+        expect(response.body.error).toContain("Failed to record historical visit due to database error: Connection failed on SELECT");
+        expect(mockDbService.executeQuery).toHaveBeenCalledTimes(1);
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            "Azure SQL Error in /record-missed-visit:", dbError.message
+        );
+    });
+
+    test('should return 500 if the INSERT query fails', async () => {
+        const dbError = new Error("Transaction failed on INSERT");
+        
+        // Mock DB calls: 1. SELECT succeeds. 2. INSERT fails.
+        mockDbService.executeQuery.mockResolvedValueOnce({ recordset: [] }); 
+        mockDbService.executeQuery.mockRejectedValueOnce(dbError); 
+
+        const response = await request(app)
+            .post('/record-missed-visit')
+            .send(GOOD_BODY)
+            .expect('Content-Type', /json/)
+            .expect(500);
+
+        expect(response.body.error).toContain("Failed to record historical visit due to database error: Transaction failed on INSERT");
+        expect(mockDbService.executeQuery).toHaveBeenCalledTimes(2);
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            "Azure SQL Error in /record-missed-visit:", dbError.message
+        );
     });
 });

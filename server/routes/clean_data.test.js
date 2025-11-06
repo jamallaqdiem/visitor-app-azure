@@ -1,141 +1,165 @@
-const sqlite3 = require('sqlite3').verbose();
-const runDataComplianceCleanup = require('./clean_data'); 
+const sql = require("mssql");
+const runDataComplianceCleanup = require('./clean_data');
 
-const dbRun = (db, sql, params = []) => {
-    return new Promise((resolve, reject) => {
-        db.run(sql, params, function (err) {
-            if (err) return reject(err);
-            resolve({ id: this.lastID, changes: this.changes });
-        });
-    });
-};
+// Mock the core components
+jest.mock('mssql', () => ({
+    NVarChar: 'NVarChar', 
+    Int: 'Int',
+}));
 
-const dbGet = (db, sql, params = []) => {
-    return new Promise((resolve, reject) => {
-        db.get(sql, params, (err, row) => {
-            if (err) return reject(err);
-            resolve(row);
-        });
-    });
-};
-
-// --- Mock Database Setup ---
-let mockDb;
-
-const setupDatabase = () => {
-    return new Promise((resolve) => {
-        // Using an in-memory 
-        mockDb = new sqlite3.Database(':memory:');
-
-        // Table definitions 
-        const tableSql = [
-            `CREATE TABLE visitors ( id INTEGER PRIMARY KEY, first_name TEXT NOT NULL, last_name TEXT NOT NULL, photo_path TEXT, is_banned BOOLEAN DEFAULT 0 )`,
-            `CREATE TABLE visits ( id INTEGER PRIMARY KEY, visitor_id INTEGER NOT NULL, entry_time TEXT NOT NULL, exit_time TEXT, known_as TEXT, address TEXT, phone_number TEXT, unit TEXT NOT NULL, reason_for_visit TEXT, type TEXT NOT NULL, company_name TEXT, FOREIGN KEY (visitor_id) REFERENCES visitors(id) )`,
-            `CREATE TABLE dependents ( id INTEGER PRIMARY KEY, full_name TEXT NOT NULL, age INTEGER, visit_id INTEGER NOT NULL, FOREIGN KEY (visit_id) REFERENCES visits(id) )`,
-            `CREATE TABLE audit_logs ( id INTEGER PRIMARY KEY, event_name TEXT NOT NULL, timestamp TEXT NOT NULL, status TEXT NOT NULL, profiles_deleted INTEGER, visits_deleted INTEGER, dependents_deleted INTEGER )`
-        ];
-
-        mockDb.serialize(async () => {
-            for (const sql of tableSql) {
-                await dbRun(mockDb, sql);
-            }
-            resolve();
-        });
-    });
-};
-
-// --- Helper to insert data for the test case ---
-async function insertTestData(oldVisitorName, newVisitorName) {
-    // 3 years ago (should be deleted by the 2-year cleanup rule)
-    const threeYearsAgo = new Date(Date.now() - 3 * 365 * 24 * 60 * 60 * 1000).toISOString();
-    const today = new Date().toISOString();
+describe('runDataComplianceCleanup', () => {
+    let mockDbService;
+    let mockCallback;
+    let consoleLogSpy;
+    let consoleErrorSpy;
     
-    // 1. Data Set A: OLD (to be deleted)
-    const oldV = await dbRun(mockDb, `INSERT INTO visitors (first_name, last_name) VALUES (?, ?)`, [oldVisitorName, 'Old']);
-    const oldVisit = await dbRun(mockDb, `INSERT INTO visits (visitor_id, entry_time, unit, type) VALUES (?, ?, 'A1', 'Personal')`, [oldV.id, threeYearsAgo]);
-    await dbRun(mockDb, `INSERT INTO dependents (full_name, visit_id) VALUES (?, ?)`, ['Old Kid', oldVisit.id]);
+    // Define a fixed current time for deterministic date calculation 
+    const MOCK_CURRENT_TIME = new Date('2025-10-25T10:00:00.000Z').getTime();
+    const MOCK_TWO_YEARS_AGO = new Date(MOCK_CURRENT_TIME - 2 * 365 * 24 * 60 * 60 * 1000).toISOString();
     
-    // 2. Data Set B: NEW (to be kept)
-    const newV = await dbRun(mockDb, `INSERT INTO visitors (first_name, last_name) VALUES (?, ?)`, [newVisitorName, 'New']);
-    await dbRun(mockDb, `INSERT INTO visits (visitor_id, entry_time, unit, type) VALUES (?, ?, 'B2', 'Delivery')`, [newV.id, today]);
-}
+    // Define the expected SQL strings for verification
+    const expectedSql = {
+        deleteDependents: expect.stringContaining('DELETE FROM dependents'),
+        deleteVisits: expect.stringContaining('DELETE FROM visits'),
+        deleteVisitors: expect.stringContaining('DELETE FROM visitors'),
+        insertAudit: expect.stringContaining('INSERT INTO audit_logs'),
+    };
 
-// --- Test Lifecycle Hooks ---
-beforeEach(async () => {
-    // 1. Setup fresh in-memory database
-    await setupDatabase();
-    // 2. Insert test data
-    await insertTestData('OldAlice', 'NewBob');
-});
 
-afterEach(async () => {
-    // Close the in-memory database after each test
-    await new Promise((resolve) => mockDb.close(resolve));
-});
-
-afterAll((done) => {
-    done();
-});
-
-// --- Test Suite ---
-describe('Data Retention Compliance Cleanup', () => {
-    test('should correctly delete old records and log the changes to the audit table', async () => {
-        await new Promise(resolve => runDataComplianceCleanup(mockDb, resolve));
-
-        // 1. Assert Database State after Cleanup
-        const totalVisitors = await dbGet(mockDb, 'SELECT COUNT(id) AS count FROM visitors');
-        const totalVisits = await dbGet(mockDb, 'SELECT COUNT(id) AS count FROM visits');
-        const totalDependents = await dbGet(mockDb, 'SELECT COUNT(id) AS count FROM dependents');
+    beforeEach(() => {
+        // Mock Date.now() to ensure the 'twoYearsAgo' calculation is consistent
+        jest.spyOn(Date, 'now').mockReturnValue(MOCK_CURRENT_TIME);
         
-        // Only the "NewBob" records should remain.
-        expect(totalVisitors.count).toBe(1);
-        expect(totalVisits.count).toBe(1);
-        expect(totalDependents.count).toBe(0);
+        // Mock logging functions
+        consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+        consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-        const remainingVisitor = await dbGet(mockDb, 'SELECT first_name FROM visitors');
-        expect(remainingVisitor.first_name).toBe('NewBob');
+        // Mock the dbService
+        mockDbService = {
+            executeQuery: jest.fn(),
+        };
 
-        // 2. Assert Audit Log Integrity
-        const auditLog = await dbGet(mockDb, `SELECT * FROM audit_logs WHERE event_name = 'Compliance Cleanup Succeeded'`);
-
-        // Check if the audit log was created
-        expect(auditLog).toBeDefined();
-        
-        // Check the reported deletion counts
-        expect(auditLog.profiles_deleted).toBe(1);
-        expect(auditLog.visits_deleted).toBe(1);
-        expect(auditLog.dependents_deleted).toBe(1);
-        
-        expect(auditLog.status).toBe('OK');
+        // Mock the callback
+        mockCallback = jest.fn();
     });
 
-    test('should delete nothing when all data is recent', async () => {
-        await new Promise((resolve) => mockDb.run(`DELETE FROM dependents`, resolve));
-        await new Promise((resolve) => mockDb.run(`DELETE FROM visits`, resolve));
-        await new Promise((resolve) => mockDb.run(`DELETE FROM visitors`, resolve));
+    afterEach(() => {
+        jest.restoreAllMocks(); // Restore mocks after each test
+    });
 
-        // Insert fresh data
-        const today = new Date().toISOString();
-        const v1 = await dbRun(mockDb, `INSERT INTO visitors (first_name, last_name) VALUES (?, ?)`, ['Fresh', 'One']);
-        await dbRun(mockDb, `INSERT INTO visits (visitor_id, entry_time, unit, type) VALUES (?, ?, 'C3', 'Delivery')`, [v1.id, today]);
+    // --- Scenario 1: Successful Cleanup ---
+    test('should execute all deletion steps and log a successful audit entry', async () => {
+        // 1. Setup Mock Results for 4 sequential calls:
+        mockDbService.executeQuery
+            // 1. Dependents DELETE (5 rows affected)
+            .mockResolvedValueOnce({ rowsAffected: [5] }) 
+            // 2. Visits DELETE (10 rows affected)
+            .mockResolvedValueOnce({ rowsAffected: [10] }) 
+            // 3. Visitor Profiles DELETE (3 rows affected)
+            .mockResolvedValueOnce({ rowsAffected: [3] }) 
+            // 4. Audit Log INSERT (success)
+            .mockResolvedValueOnce({}); 
+
+        // 2. Run the cleanup job
+        await runDataComplianceCleanup(mockDbService, mockCallback);
+
+        // 3. Assertions
         
-        // Run cleanup
-        await new Promise(resolve => runDataComplianceCleanup(mockDb, resolve));
-
-        // Assert Database State
-        const totalVisitors = await dbGet(mockDb, 'SELECT COUNT(id) AS count FROM visitors');
-        const totalVisits = await dbGet(mockDb, 'SELECT COUNT(id) AS count FROM visits');
-
-        // All 1 visitor and 1 visit should remain
-        expect(totalVisitors.count).toBe(1);
-        expect(totalVisits.count).toBe(1);
-
-        // Assert Audit Log Integrity
-        const auditLog = await dbGet(mockDb, `SELECT * FROM audit_logs WHERE event_name = 'Compliance Cleanup Succeeded'`);
+        // Check that all 4 DB calls were attempted
+        expect(mockDbService.executeQuery).toHaveBeenCalledTimes(4);
         
-        // All deletion counts should be zero
-        expect(auditLog.profiles_deleted).toBe(0);
-        expect(auditLog.visits_deleted).toBe(0);
-        expect(auditLog.dependents_deleted).toBe(0);
+        // Check parameters of the first call (Dependents DELETE)
+        expect(mockDbService.executeQuery).toHaveBeenNthCalledWith(1, 
+            expectedSql.deleteDependents,
+            [{ name: "twoYearsAgo", type: 'NVarChar', value: MOCK_TWO_YEARS_AGO }]
+        );
+
+        // Check the final Audit Log entry parameters (4th call)
+        expect(mockDbService.executeQuery).toHaveBeenNthCalledWith(4, 
+            expectedSql.insertAudit,
+            expect.arrayContaining([
+                expect.objectContaining({ name: "eventName", value: "Compliance Cleanup Succeeded" }),
+                expect.objectContaining({ name: "status", value: "OK" }),
+                expect.objectContaining({ name: "profilesDeleted", value: 3 }),
+                expect.objectContaining({ name: "visitsDeleted", value: 10 }),
+                expect.objectContaining({ name: "dependentsDeleted", value: 5 }),
+            ])
+        );
+
+        // Check logging output
+        expect(consoleLogSpy).toHaveBeenCalledWith('Cleanup: Deleted 5 old dependent record(s).');
+        
+        // Check the final callback call 
+        expect(mockCallback).toHaveBeenCalledWith('');
+    });
+
+    // --- Scenario 2: Database Failure during Deletion ---
+    test('should stop execution on error and log a failed audit entry', async () => {
+        const DB_ERROR_MESSAGE = 'A DB connection error occurred.';
+
+        // 1. Setup Mock Results for 2 sequential calls:
+        mockDbService.executeQuery
+            // 1. Dependents DELETE (Success, 2 rows affected)
+            .mockResolvedValueOnce({ rowsAffected: [2] }) 
+            // 2. Visits DELETE (FAILURE)
+            .mockRejectedValueOnce(new Error(DB_ERROR_MESSAGE)) 
+            // 3. Audit Log INSERT (The only remaining DB call in the finally block)
+            .mockResolvedValueOnce({}); 
+
+        // 2. Run the cleanup job
+        await runDataComplianceCleanup(mockDbService, mockCallback);
+
+        // 3. Assertions
+
+        // Check that only 3 DB calls were attempted (Dependents, Visits fail, then Audit log)
+        expect(mockDbService.executeQuery).toHaveBeenCalledTimes(3); 
+        
+        // Check error logging
+        expect(consoleErrorSpy).toHaveBeenCalledWith(`Cleanup Error: ${DB_ERROR_MESSAGE}`);
+        
+        // Check the final Audit Log entry parameters (3rd call)
+        expect(mockDbService.executeQuery).toHaveBeenNthCalledWith(3, 
+            expectedSql.insertAudit,
+            expect.arrayContaining([
+                expect.objectContaining({ name: "eventName", value: "Compliance Cleanup Failed" }),
+                expect.objectContaining({ name: "status", value: "ERROR" }),
+                expect.objectContaining({ name: "dependentsDeleted", value: 2 }),
+                expect.objectContaining({ name: "visitsDeleted", value: 0 }),
+                expect.objectContaining({ name: "profilesDeleted", value: 0 }),
+            ])
+        );
+
+        // Check the final callback call (with the error message)
+        expect(mockCallback).toHaveBeenCalledWith(DB_ERROR_MESSAGE);
+    });
+    
+    // --- Scenario 3: Fatal Audit Log Failure (Should still call main callback) ---
+    test('should handle audit log failure and still call the main callback', async () => {
+        const AUDIT_ERROR_MESSAGE = 'Audit table is down.';
+
+        // 1. Setup Mock Results for 4 sequential calls:
+        mockDbService.executeQuery
+            // 1. Dependents DELETE (Success)
+            .mockResolvedValueOnce({ rowsAffected: [1] }) 
+            // 2. Visits DELETE (Success)
+            .mockResolvedValueOnce({ rowsAffected: [1] }) 
+            // 3. Visitor Profiles DELETE (Success)
+            .mockResolvedValueOnce({ rowsAffected: [1] }) 
+            // 4. Audit Log INSERT (FAILURE)
+            .mockRejectedValueOnce(new Error(AUDIT_ERROR_MESSAGE)); 
+
+        // 2. Run the cleanup job
+        await runDataComplianceCleanup(mockDbService, mockCallback);
+
+        // 3. Assertions
+
+        // Check that all 4 DB calls were attempted
+        expect(mockDbService.executeQuery).toHaveBeenCalledTimes(4);
+        
+        // Check fatal error logging
+        expect(consoleErrorSpy).toHaveBeenCalledWith('FATAL: Could not write audit log:', AUDIT_ERROR_MESSAGE);
+        
+        // Check the final callback call (since the main try block succeeded, it returns no error)
+        expect(mockCallback).toHaveBeenCalledWith('');
     });
 });
