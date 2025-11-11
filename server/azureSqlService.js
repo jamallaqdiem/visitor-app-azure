@@ -1,9 +1,8 @@
 const sql = require("mssql");
+const { DefaultAzureCredential } = require("@azure/identity");
 
 // Configuring connection using environment variables.
-const config = {
-  user: process.env.DB_USER, 
-  password: process.env.DB_PASSWORD, 
+const config = { 
   server: process.env.DB_SERVER, 
   database: process.env.DB_NAME, 
   options: {
@@ -26,13 +25,26 @@ let pool;
  */
 async function connectDb() {
   try {
-    console.log("Attempting to connect to Azure SQL...");
-    pool = await sql.connect(config);
+    const credential = new DefaultAzureCredential();
+    const token = await credential.getToken("https://database.windows.net/.default");
+
+    // 4. Update the config to use the token
+    const finalConfig = {
+      ...config,
+      authentication: {
+        type: 'azure-active-directory-access-token',
+        options: {
+          token: token.token
+        }
+      }
+    };
+    console.log("Attempting to connect to Azure SQL via Managed Identity...");
+    pool = await sql.connect(finalConfig);
     console.log("✅ Azure SQL connection pool created successfully.");
     return pool;
   } catch (err) {
     console.error(
-      "❌ FATAL: Database Connection Failed. Check DB_SERVER, DB_USER, DB_PASSWORD, and DB_NAME in your .env file.",
+      "❌ FATAL: Database Connection Failed.Check DB_SERVER, DB_NAME, Managed Identity setup, and Firewall rules..",
       err.message
     );
     throw err;
