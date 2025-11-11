@@ -9,6 +9,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@azure/identity": "^4.13.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "multer": "^2.0.2"
