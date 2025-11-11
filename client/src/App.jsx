@@ -6,7 +6,7 @@ import PasswordModal from "./components/PasswordModal";
 import RecordMissedVisitModal from "./components/RecordMissedVisitModal";
 import HistoryDashboard from "./components/VisitHistory";
 
-const API_BASE_URL = "http://localhost:3001";
+const API_BASE_URL = "";
 
 // Initial state for the registration form
 const initialRegistrationForm = {
@@ -128,7 +128,7 @@ function App() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/visitors`);
+      const response = await fetch(`${API_BASE_URL}/api/visitors`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -171,7 +171,7 @@ function App() {
 
     try {
       const encodedSearchTerm = encodeURIComponent(trimmedTerm);
-      const url = `${API_BASE_URL}/visitor-search?name=${encodedSearchTerm}`;
+      const url = `${API_BASE_URL}/api/visitor-search?name=${encodedSearchTerm}`;
 
       const response = await fetch(url);
       const data = await response.json();
@@ -321,7 +321,7 @@ function App() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/register-visitor`, {
+      const response = await fetch(`${API_BASE_URL}/api/register-visitor`, {
         method: "POST",
         body: formData,
       });
@@ -379,7 +379,7 @@ function App() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/login`, {
+      const response = await fetch(`${API_BASE_URL}/api/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
@@ -442,7 +442,7 @@ function App() {
     };
 
     try {
-      const response = await fetch(`${API_BASE_URL}/update-visitor-details`, {
+      const response = await fetch(`${API_BASE_URL}/api/update-visitor-details`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(dataToSend),
@@ -472,7 +472,7 @@ function App() {
       (activeVisitor) => activeVisitor.id === id
     );
     try {
-      const response = await fetch(`${API_BASE_URL}/ban-visitor/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/ban-visitor/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -541,7 +541,7 @@ function App() {
     if (currentAction === "unban") {
       try {
         const response = await fetch(
-          `${API_BASE_URL}/unban-visitor/${currentId}`,
+          `${API_BASE_URL}/api/unban-visitor/${currentId}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -569,7 +569,7 @@ function App() {
     else if (currentAction === "viewHistory") {
       //  Password check for history data
       try {
-        const response = await fetch(`${API_BASE_URL}/authorize-history`, {
+        const response = await fetch(`${API_BASE_URL}/api/authorize-history`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ password }),
@@ -636,7 +636,7 @@ function App() {
     setShowMissedVisitModal(false);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/record-missed-visit`, {
+      const response = await fetch(`${API_BASE_URL}/api/record-missed-visit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -665,7 +665,7 @@ function App() {
   // 6. Sign Out (From Dashboard)
   const handleVisitorLogout = async (id) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/exit-visitor/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/exit-visitor/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -714,7 +714,7 @@ function App() {
     setHistoryLoading(true);
 
     try {
-      const url = new URL(`${API_BASE_URL}/history`);
+      const url = new URL(`${API_BASE_URL}/api/history`);
       if (query) url.searchParams.append("query", query);
       if (start) url.searchParams.append("endDate", start);
       if (end) url.searchParams.append("endDate", end);
