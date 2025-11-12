@@ -5,6 +5,7 @@ const { DefaultAzureCredential } = require("@azure/identity");
 const config = { 
   server: process.env.DB_SERVER, 
   database: process.env.DB_NAME, 
+  port: parseInt(process.env.DB_PORT || '1433', 10),
   options: {
     encrypt: true, 
     enableArithAbort: true,
@@ -32,10 +33,9 @@ async function connectDb() {
     const finalConfig = {
       ...config,
       authentication: {
-        type: 'azure-active-directory-default', // <-- Use the simplified type
+        type: 'azure-active-directory-default', 
         options: {
           // Provide the credential object directly.
-          // mssql handles token retrieval internally.
           credential: credential 
         }
       }
