@@ -74,7 +74,7 @@ async function initializeApp() {
         // 1. Connect to the Azure SQL Database Pool
         await dbService.connectDb();
 
-        // 2. Router usage 
+        // 2. Router usage (rest of your existing code)
         app.use("/api", createRegistrationRouter(dbService, upload));
         app.use("/api", createVisitorsRouter(dbService));
         app.use("/api", createLoginRouter(dbService));
@@ -89,10 +89,21 @@ async function initializeApp() {
         // 3. Running compliance cleanup job 
         runDataComplianceCleanup(dbService);
         
+        // Start listening on the port Azure Functions provides
+        const port = process.env.PORT || 7071; // Use the port provided by the runtime
+        app.listen(port, () => {
+            console.log(`Server is running on port ${port}`);
+        });
+        
     } catch (error) {
-        // If connectDb() fails, the server will not start.
-        console.error('Server failed to start due to database connection error. Exiting.', error);
-        process.exit(1);
+        // the failure to connect and restart the process gracefully.
+        console.error('Database connection failed on startup. Server will try to remain available for restart.', error);
+        
+        // start the Express server on the required port
+        const port = process.env.PORT || 7071;
+        app.listen(port, () => {
+            console.log(`Fallback server started on port ${port} despite DB error.`);
+        });
     }
 }
 
