@@ -1,4 +1,3 @@
-require('dotenv').config();
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -8,7 +7,6 @@ const multer = require("multer");
 const dbService = require("./azureSqlService");
 
 const app = express();
-const PORT = process.env.PORT || 3001; 
 
 // Import Routers ]
 const runDataComplianceCleanup = require("./routes/clean_data");
@@ -91,11 +89,6 @@ async function initializeApp() {
         // 3. Running compliance cleanup job 
         runDataComplianceCleanup(dbService);
         
-        // 4. Start the Express Server
-        app.listen(PORT, () => {
-            console.log(`Server is running on http://localhost:${PORT}`);
-        });
-
     } catch (error) {
         // If connectDb() fails, the server will not start.
         console.error('Server failed to start due to database connection error. Exiting.', error);

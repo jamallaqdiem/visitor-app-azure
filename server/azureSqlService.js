@@ -25,32 +25,31 @@ let pool;
  */
 async function connectDb() {
   try {
+    // 1. Get the Default Azure Credential
     const credential = new DefaultAzureCredential();
-    const token = await credential.getToken("https://database.windows.net/.default");
 
-    // 4. Update the config to use the token
+    // 2. Define the configuration using 'azure-active-directory-default' type
     const finalConfig = {
       ...config,
       authentication: {
-        type: 'azure-active-directory-access-token',
+        type: 'azure-active-directory-default', // <-- Use the simplified type
         options: {
-          token: token.token
+          // Provide the credential object directly.
+          // mssql handles token retrieval internally.
+          credential: credential 
         }
       }
     };
+    
     console.log("Attempting to connect to Azure SQL via Managed Identity...");
     pool = await sql.connect(finalConfig);
     console.log("✅ Azure SQL connection pool created successfully.");
     return pool;
   } catch (err) {
-    console.error(
-      "❌ FATAL: Database Connection Failed.Check DB_SERVER, DB_NAME, Managed Identity setup, and Firewall rules..",
-      err.message
-    );
+    // ... error handling
     throw err;
   }
 }
-
 /**
  * Core secure query execution function. Used by all routers.
  * @param {string} querySql The T-SQL query string.
