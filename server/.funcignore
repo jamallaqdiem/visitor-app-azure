@@ -1,0 +1,10 @@
+# Ignore common Node.js development files
+node_modules
+.vscode/
+
+# Ignore Jest/Testing directories and files
+__tests__
+__snapshots__
+*.test.js
+*.spec.js
+jest.config.js
