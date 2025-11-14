@@ -1,16 +1,14 @@
-require('dotenv').config();
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
-const dbService = require("./azureSqlService");
+const dbService = require("./azureSqlService"); 
 
 const app = express();
-const PORT = process.env.PORT || 3001; 
 
-// Import Routers ]
+// Import Routers 
 const runDataComplianceCleanup = require("./routes/clean_data");
 const createRegistrationRouter = require("./auth/registration");
 const createVisitorsRouter = require("./routes/visitors");
@@ -27,12 +25,13 @@ const createHistoryRouter = require("./routes/display_history");
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
+// Handle file uploads directory
 const uploadsDir = "uploads";
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Set up multer for file uploads
 const storage = multer.diskStorage({
@@ -67,41 +66,28 @@ const upload = multer({
   },
 });
 
-/**
- * Main application initializer function.
- * Connects to the database and then starts the server.
- */
-async function initializeApp() {
-    try {
-        // 1. Connect to the Azure SQL Database Pool
-        await dbService.connectDb();
 
-        // 2. Router usage 
-        app.use("/api", createRegistrationRouter(dbService, upload));
-        app.use("/api", createVisitorsRouter(dbService));
-        app.use("/api", createLoginRouter(dbService));
-        app.use("/api", createUpdateVisitorRouter(dbService));
-        app.use("/api", createLogoutRouter(dbService));
-        app.use("/api", createBanVisitorRouter(dbService));
-        app.use("/api", createUnbanVisitorRouter(dbService));
-        app.use("/api", createSearchVisitorsRouter(dbService)); 
-        app.use("/api", createMissedVisitRouter(dbService)); 
-        app.use("/api", createHistoryRouter(dbService));
+dbService.connectDb()
+    .then(() => {
+        console.log("Database connection pool initialized.");
+    })
+    .catch(error => {
+        console.error('Initial database connection failed. Endpoints may fail.', error);
+    });
 
-        // 3. Running compliance cleanup job 
-        runDataComplianceCleanup(dbService);
-        
-        // 4. Start the Express Server
-        app.listen(PORT, () => {
-            console.log(`Server is running on http://localhost:${PORT}`);
-        });
+// Router usage 
+app.use("/api", createRegistrationRouter(dbService, upload));
+app.use("/api", createVisitorsRouter(dbService));
+app.use("/api", createLoginRouter(dbService));
+app.use("/api", createUpdateVisitorRouter(dbService));
+app.use("/api", createLogoutRouter(dbService));
+app.use("/api", createBanVisitorRouter(dbService));
+app.use("/api", createUnbanVisitorRouter(dbService));
+app.use("/api", createSearchVisitorsRouter(dbService)); 
+app.use("/api", createMissedVisitRouter(dbService)); 
+app.use("/api", createHistoryRouter(dbService)); 
 
-    } catch (error) {
-        // If connectDb() fails, the server will not start.
-        console.error('Server failed to start due to database connection error. Exiting.', error);
-        process.exit(1);
-    }
-}
+// Running compliance cleanup job 
+runDataComplianceCleanup(dbService);
 
-// Execute the initialization function
-initializeApp();
+module.exports = app;
