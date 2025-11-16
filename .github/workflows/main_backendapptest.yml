@@ -21,10 +21,11 @@ jobs:
       - name: Set up Node.js version
         uses: actions/setup-node@v3
         with:
-          node-version: '24.x'
+          node-version: '20.x'
 
       - name: npm install, build, and test
         run: |
+          cd server
           npm install
           npm run build --if-present
           npm run test --if-present
@@ -33,7 +34,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          path: server
 
   deploy:
     runs-on: ubuntu-latest
@@ -61,5 +62,6 @@ jobs:
         with:
           app-name: 'backendAppTest'
           slot-name: 'Production'
-          package: .
+          package: 'server'
+
           
