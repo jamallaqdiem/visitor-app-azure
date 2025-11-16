@@ -5,8 +5,7 @@ import VisitorRegistrationForm from "./components/VisitorRegistrationForm";
 import PasswordModal from "./components/PasswordModal";
 import RecordMissedVisitModal from "./components/RecordMissedVisitModal";
 import HistoryDashboard from "./components/VisitHistory";
-
-const API_BASE_URL = "";
+const API_BASE_URL = import.meta.env.VITE_API_URL;
 
 // Initial state for the registration form
 const initialRegistrationForm = {
