@@ -73,16 +73,16 @@ async function startServer() {
     console.log("Database connection pool initialized.");
 
     // Router usage 
-    app.use("/api", createRegistrationRouter(dbService, upload)); 
-    app.use("/api", createVisitorsRouter(dbService)); 
-    app.use("/api", createLoginRouter(dbService)); 
-    app.use("/api", createUpdateVisitorRouter(dbService));
-    app.use("/api", createLogoutRouter(dbService));
-    app.use("/api", createBanVisitorRouter(dbService));
-    app.use("/api", createUnbanVisitorRouter(dbService));
-    app.use("/api", createSearchVisitorsRouter(dbService));
-    app.use("/api", createMissedVisitRouter(dbService));
-    app.use("/api", createHistoryRouter(dbService));
+    app.use("/", createRegistrationRouter(dbService, upload)); 
+    app.use("/", createVisitorsRouter(dbService)); 
+    app.use("/", createLoginRouter(dbService)); 
+    app.use("/", createUpdateVisitorRouter(dbService));
+    app.use("/", createLogoutRouter(dbService));
+    app.use("/", createBanVisitorRouter(dbService));
+    app.use("/", createUnbanVisitorRouter(dbService));
+    app.use("/", createSearchVisitorsRouter(dbService));
+    app.use("/", createMissedVisitRouter(dbService));
+    app.use("/", createHistoryRouter(dbService));
 
     // Running compliance cleanup job
     runDataComplianceCleanup(dbService);
