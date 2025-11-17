@@ -56,9 +56,10 @@ function createRegistrationRouter(dbService, upload) {
         return res.status(409).json({ message });
       }
 
-      // --- 2. START TRANSACTION (CRITICAL FOR DATA INTEGRITY) ---
-      // Note: We get the pool from the dbService and start a transaction manually
-      const pool = await dbService.connectDb();
+      // --- 2. START TRANSACTION ---
+
+     const pool = dbService.getPool();
+      if (!pool) throw new Error("Database connection pool is not initialized.");
       transaction = new sql.Transaction(pool);
       await transaction.begin();
 

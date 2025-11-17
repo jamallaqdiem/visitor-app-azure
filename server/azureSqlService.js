@@ -108,7 +108,7 @@ async function logAudit({
 }
 
 module.exports = {
-  connectDb,
+  getPool: () => pool,
   executeQuery,
   logAudit,
   sqlTypes: sql, // Exporting the mssql types so routers can define parameter types (e.g., sql.Int)
