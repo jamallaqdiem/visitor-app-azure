@@ -20,33 +20,32 @@ const config = {
 
 let pool;
 
-/**
- * Initializes the Azure SQL connection pool and must be called before
- * the server starts accepting requests.
- */
 async function connectDb() {
   try {
     // 1. Get the Default Azure Credential
     const credential = new DefaultAzureCredential();
 
-    // 2. Define the configuration using 'azure-active-directory-default' type
+    // 2. Explicitly acquire the access token for the Azure SQL resource endpoint.
+    console.log("Acquiring token via Managed Identity...");
+    const accessToken = await credential.getToken("https://database.windows.net/.default"); 
+
+    // 3. Define the configuration using 'azure-active-directory-access-token'
     const finalConfig = {
       ...config,
       authentication: {
-        type: 'azure-active-directory-default', 
+        type: 'azure-active-directory-access-token', // Changed type to token-based
         options: {
-          // Provide the credential object directly.
-          credential: credential 
+          token: accessToken.token // CORRECT: Pass the string token here
         }
       }
     };
     
-    console.log("Attempting to connect to Azure SQL via Managed Identity...");
+    console.log("Attempting to connect to Azure SQL...");
     pool = await sql.connect(finalConfig);
     console.log("✅ Azure SQL connection pool created successfully.");
     return pool;
   } catch (err) {
-    // ... error handling
+    console.error("CRITICAL ERROR: Initial database connection failed.", err);
     throw err;
   }
 }
