@@ -28,15 +28,14 @@ async function connectDb() {
   try {
     // 1. Get the Default Azure Credential
     const credential = new DefaultAzureCredential();
-
+const accessToken = await credential.getToken("https://database.windows.net/.default"); // Resource URI for A
     // 2. Define the configuration using 'azure-active-directory-default' type
     const finalConfig = {
       ...config,
       authentication: {
         type: 'azure-active-directory-default', 
         options: {
-          // Provide the credential object directly.
-          credential: credential 
+          token: accessToken.token 
         }
       }
     };
