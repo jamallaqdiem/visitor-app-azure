@@ -16,13 +16,11 @@ function createLoginRouter(dbService) {
       return res.status(400).json({ message: "Visitor ID is required." });
     }
 
-    let pool;
     let transaction;
     let lastVisitDetails = {};
     let dependentsData = [];
 
     try {
-      pool = await dbService.connectDb();
 
       // 1. Find the visitor's ban status and the details of their last visit.
       const findVisitorSql = `
@@ -100,10 +98,12 @@ function createLoginRouter(dbService) {
       }
 
       // --- Step 3: Start Transaction to insert new visit and dependents ---
-      transaction = new pool.Transaction();
+      const pool = dbService.getPool();
+      if (!pool) throw new Error("Database connection pool is not initialized.");
+      transaction = new dbService.sqlTypes.Transaction(pool);
       await transaction.begin();
 
-      const request = new pool.Request(transaction);
+      const request = new dbService.sqlTypes.Request(transaction);
 
       // 4. Insert New Visit (Uses OUTPUT INSERTED.id to get the new visit ID)
       const insertVisitSql = `
@@ -166,7 +166,7 @@ function createLoginRouter(dbService) {
                 `;
 
         for (const dep of dependentsData) {
-          const dependentRequest = new pool.Request(transaction);
+          const dependentRequest = new dbService.sqlTypes.Request(transaction);
           dependentRequest.input(
             "visit_id",
             dbService.sqlTypes.Int,
@@ -210,12 +210,7 @@ function createLoginRouter(dbService) {
       return res.status(500).json({
         error: "An unexpected database error occurred during sign-in.",
       });
-    } finally {
-      if (pool) {
-        // Close the pool connection explicitly
-        pool.close();
-      }
-    }
+    } 
   });
 
   return router;

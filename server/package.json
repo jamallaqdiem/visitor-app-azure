@@ -8,12 +8,15 @@
     "dev": "nodemon server.js",
     "test": "jest"
   },
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
     "@azure/identity": "^4.13.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "multer": "^2.0.2",
-    "express": "^5.1.0",   
+    "express": "^4.19.2",  
     "mssql": "^12.0.0"
   },
   "devDependencies": {

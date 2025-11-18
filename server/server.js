@@ -4,11 +4,11 @@ const bodyParser = require("body-parser");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
-const dbService = require("./azureSqlService"); 
+const dbService = require("./azureSqlService");
 
 const app = express();
 
-// Import Routers 
+// Import Routers
 const runDataComplianceCleanup = require("./routes/clean_data");
 const createRegistrationRouter = require("./auth/registration");
 const createVisitorsRouter = require("./routes/visitors");
@@ -19,7 +19,7 @@ const createBanVisitorRouter = require("./routes/ban");
 const createUnbanVisitorRouter = require("./routes/unban");
 const createSearchVisitorsRouter = require("./routes/search_visitors");
 const createMissedVisitRouter = require("./routes/record_missed_visit");
-const createHistoryRouter = require("./routes/display_history"); 
+const createHistoryRouter = require("./routes/display_history");
 
 // Middleware setup
 app.use(cors());
@@ -66,28 +66,36 @@ const upload = multer({
   },
 });
 
+async function startServer() {
+  try {
+    const appPort = process.env.PORT || 3000;
+    await dbService.connectDb(); // Wait for the pool to connect
+    console.log("Database connection pool initialized.");
 
-dbService.connectDb()
-    .then(() => {
-        console.log("Database connection pool initialized.");
-    })
-    .catch(error => {
-        console.error('Initial database connection failed. Endpoints may fail.', error);
-    });
+    // Router usage 
+    app.use("/api", createRegistrationRouter(dbService, upload)); 
+    app.use("/api", createVisitorsRouter(dbService)); 
+    app.use("/api", createLoginRouter(dbService)); 
+    app.use("/api", createUpdateVisitorRouter(dbService));
+    app.use("/api", createLogoutRouter(dbService));
+    app.use("/api", createBanVisitorRouter(dbService));
+    app.use("/api", createUnbanVisitorRouter(dbService));
+    app.use("/api", createSearchVisitorsRouter(dbService));
+    app.use("/api", createMissedVisitRouter(dbService));
+    app.use("/api", createHistoryRouter(dbService));
 
-// Router usage 
-app.use("/api", createRegistrationRouter(dbService, upload));
-app.use("/api", createVisitorsRouter(dbService));
-app.use("/api", createLoginRouter(dbService));
-app.use("/api", createUpdateVisitorRouter(dbService));
-app.use("/api", createLogoutRouter(dbService));
-app.use("/api", createBanVisitorRouter(dbService));
-app.use("/api", createUnbanVisitorRouter(dbService));
-app.use("/api", createSearchVisitorsRouter(dbService)); 
-app.use("/api", createMissedVisitRouter(dbService)); 
-app.use("/api", createHistoryRouter(dbService)); 
+    // Running compliance cleanup job
+    runDataComplianceCleanup(dbService);
 
-// Running compliance cleanup job 
-runDataComplianceCleanup(dbService);
-
+    // Start listening 
+    app.listen(appPort, () => console.log(`Server listening on port ${appPort}`));
+  } catch (error) {
+    console.error(
+      "Initial database connection failed. Server shutting down.",
+      error
+    );
+    process.exit(1);
+  }
+}
+startServer();
 module.exports = app;
