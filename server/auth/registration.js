@@ -45,10 +45,8 @@ function createRegistrationRouter(dbService, upload) {
         { name: "last_name", type: sql.NVarChar(255), value: last_name },
       ];
 
-      const existingVisitor = await dbService.executeQuery(
-        checkSql,
-        checkParams
-      );
+      const results = await dbService.executeQuery(checkSql, checkParams);
+      const existingVisitor = results.recordset || [];
 
       // If a row is found, it means the visitor already exists.
       if (existingVisitor.length > 0) {
@@ -56,8 +54,8 @@ function createRegistrationRouter(dbService, upload) {
         return res.status(409).json({ message });
       }
 
-      // --- 2. START TRANSACTION (CRITICAL FOR DATA INTEGRITY) ---
-      // Note: We get the pool from the dbService and start a transaction manually
+      // --- 2. START TRANSACTION ---
+      //  We get the pool from the dbService and start a transaction manually
       const pool = await dbService.connectDb();
       transaction = new sql.Transaction(pool);
       await transaction.begin();
@@ -86,7 +84,7 @@ function createRegistrationRouter(dbService, upload) {
       const visitorResult = await request.query(visitorSql);
       visitorId = visitorResult.output.visitorId;
 
-      // Check if insertion failed (shouldn't happen with SCOPE_IDENTITY, but for safety)
+      // Check if insertion failed, I used SCOPE_IDENTITY, should be safe
       if (!visitorId) {
         throw new Error("Failed to retrieve new visitor ID.");
       }
@@ -115,18 +113,20 @@ function createRegistrationRouter(dbService, upload) {
       visitRequest.input(
         "reason_for_visit",
         sql.NVarChar(500),
-        reason_for_visit
+        reason_for_visit,
       );
       visitRequest.input("type", sql.NVarChar(50), type);
       visitRequest.input("company_name", sql.NVarChar(255), company_name);
-      visitRequest.input(
-        "mandatory_acknowledgment_taken",
-        sql.Bit,
-        mandatory_acknowledgment_taken === "true" ||
-          mandatory_acknowledgment_taken === true
+      const rawValue = req.body.mandatory_acknowledgment_taken;
+      const bitValue =
+        rawValue === true ||
+        rawValue === 1 ||
+        String(rawValue).toLowerCase() === "true" ||
+        String(rawValue).toLowerCase() === "on" ||
+        String(rawValue).toLowerCase() === "1"
           ? 1
-          : 0
-      );
+          : 0;
+      visitRequest.input("mandatory_acknowledgment_taken", sql.Bit, bitValue);
 
       visitRequest.output("visitId", sql.Int);
 
@@ -137,7 +137,7 @@ function createRegistrationRouter(dbService, upload) {
         throw new Error("Failed to retrieve new visit ID.");
       }
 
-      // --- 5. INSERT DEPENDENTS (IF ANY) ---
+      // --- 5. INSERT DEPENDENTS  ---
       if (additional_dependents) {
         let dependentsArray = [];
         try {
@@ -156,12 +156,10 @@ function createRegistrationRouter(dbService, upload) {
                     `;
 
           for (const dependent of dependentsArray) {
-            // We must re-define the request parameters for each dependent,
-            // as mssql reuses the request object for different queries in a transaction
             dependentRequest.input(
               "full_name",
               sql.NVarChar(255),
-              dependent.full_name
+              dependent.full_name,
             );
             dependentRequest.input("age", sql.Int, dependent.age);
             dependentRequest.input("visit_id", sql.Int, visitId);
@@ -199,13 +197,12 @@ function createRegistrationRouter(dbService, upload) {
       // Clean up uploaded file if registration failed
       if (req.file && req.file.path) {
         try {
-          // Assuming fs module is available from your server.js context
           fs.unlinkSync(req.file.path);
           console.log(`Cleaned up uploaded file: ${req.file.path}`);
         } catch (cleanupError) {
           console.error(
             "Failed to clean up uploaded file:",
-            cleanupError.message
+            cleanupError.message,
           );
         }
       }

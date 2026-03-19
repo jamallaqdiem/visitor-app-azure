@@ -14,9 +14,6 @@ function createHistoryRouter(dbService) {
   // Endpoint to use the password for authorization
   router.post("/authorize-history", (req, res) => {
     const { password } = req.body;
-
-    // IMPORTANT: In a real application, fetch this from a secure configuration,
-    // not directly from process.env on every request.
     const masterPassword = process.env.MASTER_PASSWORD2;
 
     if (password === masterPassword) {
@@ -40,7 +37,7 @@ function createHistoryRouter(dbService) {
     if (search) {
       const searchParam = `%${search.toLowerCase()}%`;
       whereClauses.push(
-        `(LOWER(T1.first_name) LIKE @searchParam OR LOWER(T1.last_name) LIKE @searchParam)`
+        `(LOWER(T1.first_name) LIKE @searchParam OR LOWER(T1.last_name) LIKE @searchParam)`,
       );
       // We only need to add the parameter once, since it's used twice in the clause
       inputs.push({
@@ -100,10 +97,12 @@ function createHistoryRouter(dbService) {
 
     try {
       // 3. Execute the query
-      const rows = await dbService.executeQuery(query, inputs);
+      const results = await dbService.executeQuery(query, inputs);
 
       // 4. Process results to clean up data and parse JSON dependents
-      const results = rows.map((row) => {
+      const rows = results && results.recordset ? results.recordset : [];
+
+      const historyData = rows.map((row) => {
         let dependents = [];
 
         // Azure SQL's FOR JSON PATH outputs a valid JSON array string
@@ -114,7 +113,7 @@ function createHistoryRouter(dbService) {
             console.warn(
               "Could not parse dependents JSON string:",
               row.additional_dependents_json,
-              e
+              e,
             );
           }
         }
@@ -132,14 +131,12 @@ function createHistoryRouter(dbService) {
         };
       });
 
-      res.json(results);
+      res.json(historyData);
     } catch (err) {
       console.error("Azure SQL Error in GET /history:", err.message);
-      res
-        .status(500)
-        .json({
-          error: "Failed to retrieve historical data from the database.",
-        });
+      res.status(500).json({
+        error: "Failed to retrieve historical data from the database.",
+      });
     }
   });
 

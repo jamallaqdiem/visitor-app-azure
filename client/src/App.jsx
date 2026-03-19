@@ -5,6 +5,9 @@ import VisitorRegistrationForm from "./components/VisitorRegistrationForm";
 import PasswordModal from "./components/PasswordModal";
 import RecordMissedVisitModal from "./components/RecordMissedVisitModal";
 import HistoryDashboard from "./components/VisitHistory";
+import TutorialModal from "./components/TutorialModal";
+import ContractorHandoverModal from "./components/ContractorHandoverModal";
+import { HelpCircle } from "lucide-react";
 const API_BASE_URL = import.meta.env.VITE_API_URL;
 
 // Initial state for the registration form
@@ -20,7 +23,6 @@ const initialRegistrationForm = {
   companyName: "",
   photo: null,
 };
-
 function App() {
   // --- Global State & Loading ---
   const [visitors, setVisitors] = useState([]);
@@ -28,6 +30,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [loadingRegistration, setLoadingRegistration] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [visitorToSignOut, setVisitorToSignOut] = useState(null);
 
   // --- UI/Mode State ---
   const [searchTerm, setSearchTerm] = useState("");
@@ -56,7 +60,8 @@ function App() {
 
   // --- Visitor Details/Update Form State ---
   const [editFormData, setEditFormData] = useState({});
-  const [isDetailsAgreementChecked, setIsDetailsAgreementChecked] = useState(false);
+  const [isDetailsAgreementChecked, setIsDetailsAgreementChecked] =
+    useState(false);
 
   // --- Notification State (Global for forms and dashboard) ---
   const [message, setMessage] = useState("");
@@ -69,8 +74,8 @@ function App() {
 
   // --- Modal Context State (Tracks the pending action) ---
   const [modalContext, setModalContext] = useState({
-    type: null, 
-    visitorId: null, 
+    type: null,
+    visitorId: null,
     title: "",
     description: "",
     submitText: "",
@@ -223,7 +228,8 @@ function App() {
       reason_for_visit: visitor.reason_for_visit || "",
       type: visitor.type || "visitor",
       company_name: visitor.company_name || "",
-      mandatory_acknowledgment_taken: visitor.mandatory_acknowledgment_taken || "",
+      mandatory_acknowledgment_taken:
+        visitor.mandatory_acknowledgment_taken || "",
       additional_dependents:
         visitor.dependents && Array.isArray(visitor.dependents)
           ? visitor.dependents
@@ -233,8 +239,8 @@ function App() {
     });
     setSearchResults([]);
     setSearchTerm("");
-    setShowRegistration(false); 
-    setIsAgreementCheckedAdult(false); 
+    setShowRegistration(false);
+    setIsAgreementCheckedAdult(false);
     setIsAgreementCheckedChild(false);
     showNotification("Visitor details loaded.", "blue");
   };
@@ -244,8 +250,8 @@ function App() {
     setRegFormData(initialRegistrationForm);
     setRegDependents([]);
     setPhotoPreviewUrl(null);
-    setIsAgreementCheckedAdult(false); 
-    setIsAgreementCheckedChild(false);
+    setIsAgreementCheckedAdult(false);
+    setIsAgreementCheckedChild(false);
     setSelectedVisitor(null);
     setSearchResults([]);
     setSearchTerm("");
@@ -305,15 +311,15 @@ function App() {
     formData.append("type", regFormData.visitorType);
     formData.append("company_name", regFormData.companyName);
     formData.append(
-  "mandatory_acknowledgment_taken", 
-  isAgreementCheckedAdult ? 1 : 0 
-);
+      "mandatory_acknowledgment_taken",
+      isAgreementCheckedAdult ? 1 : 0,
+    );
     if (regFormData.photo) {
       formData.append("photo", regFormData.photo);
     }
 
     const validDependents = regDependents.filter(
-      (dep) => dep.full_name.trim() !== ""
+      (dep) => dep.full_name.trim() !== "",
     );
     if (validDependents.length > 0) {
       formData.append("additional_dependents", JSON.stringify(validDependents));
@@ -338,8 +344,8 @@ function App() {
         setRegFormData(initialRegistrationForm);
         setRegDependents([]);
         setPhotoPreviewUrl(null);
-        setIsAgreementCheckedAdult(false)
-        setIsAgreementCheckedChild(false)
+        setIsAgreementCheckedAdult(false);
+        setIsAgreementCheckedChild(false);
         handleCancelAction(); // Go back to dashboard
       }, 4000);
 
@@ -360,19 +366,19 @@ function App() {
     if (selectedVisitor.is_banned === 1) {
       showNotification(
         "Visitor is banned and cannot check in. Please unban first.",
-        "error"
+        "error",
       );
       return;
     }
     // Check if the visitor is already signed in (if their ID exists in the active visitors list)
     const isAlreadySignedIn = visitors.some(
-      (activeVisitor) => activeVisitor.id === id
+      (activeVisitor) => activeVisitor.id === id,
     );
 
     if (isAlreadySignedIn) {
       showNotification(
         `${selectedVisitor.first_name} is already signed in! Cannot sign in again.`,
-        "error"
+        "error",
       );
       return;
     }
@@ -407,25 +413,25 @@ function App() {
     if (selectedVisitor.is_banned === 1) {
       showNotification(
         "Visitor is banned and cannot sign in. Please unban first.",
-        "error"
+        "error",
       );
       return;
     }
     // Check if the visitor is already signed in before allowing the update & log-in.
     const isAlreadySignedIn = visitors.some(
-      (activeVisitor) => activeVisitor.id === selectedVisitor.id
+      (activeVisitor) => activeVisitor.id === selectedVisitor.id,
     );
 
     if (isAlreadySignedIn) {
       showNotification(
         `${selectedVisitor.first_name} is already signed in! Sign them out first to log in again.`,
-        "error"
+        "error",
       );
 
       return;
     }
     const cleanedDependents = (editFormData.additional_dependents || []).filter(
-      (dep) => dep.full_name && dep.full_name.trim() !== ""
+      (dep) => dep.full_name && dep.full_name.trim() !== "",
     );
     const dataToSend = {
       id: selectedVisitor.id,
@@ -436,16 +442,19 @@ function App() {
       reason_for_visit: editFormData.reason_for_visit,
       type: editFormData.type,
       company_name: editFormData.company_name,
-      mandatory_acknowledgment_taken: isAgreementCheckedAdult ? 1 : 0 ,
+      mandatory_acknowledgment_taken: isAgreementCheckedAdult ? 1 : 0,
       additional_dependents: JSON.stringify(cleanedDependents),
     };
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/update-visitor-details`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(dataToSend),
-      });
+      const response = await fetch(
+        `${API_BASE_URL}/api/update-visitor-details`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(dataToSend),
+        },
+      );
 
       const result = await response.json();
 
@@ -468,7 +477,7 @@ function App() {
   const handleBan = async (id) => {
     if (!id) return;
     const isCurrentlySignedIn = visitors.some(
-      (activeVisitor) => activeVisitor.id === id
+      (activeVisitor) => activeVisitor.id === id,
     );
     try {
       const response = await fetch(`${API_BASE_URL}/api/ban-visitor/${id}`, {
@@ -515,7 +524,7 @@ function App() {
   // The second function to handle showing the modal for viewing history
   const handleViewHistoryClick = () => {
     setPassword("");
-    setMessage(""); 
+    setMessage("");
     setModalContext({
       type: "viewHistory",
       visitorId: null,
@@ -545,7 +554,7 @@ function App() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ password }),
-          }
+          },
         );
         const result = await response.json();
 
@@ -606,15 +615,15 @@ function App() {
 
   // handle correcting the entry time
   const handleRecordMissedVisitClick = () => {
-       // Check if the visitor is already signed in before allowing the correct missed entry time.
+    // Check if the visitor is already signed in before allowing the correct missed entry time.
     const isAlreadySignedIn = visitors.some(
-      (activeVisitor) => activeVisitor.id === selectedVisitor.id
+      (activeVisitor) => activeVisitor.id === selectedVisitor.id,
     );
 
     if (isAlreadySignedIn) {
       showNotification(
         `${selectedVisitor.first_name} is already signed in!`,
-        "error"
+        "error",
       );
       return;
     }
@@ -626,7 +635,7 @@ function App() {
 
   const confirmRecordMissedVisit = async () => {
     const visitorId = selectedVisitor?.id;
- 
+
     if (!missedEntryTime) {
       showNotification("Entry time is required.", "error");
       return;
@@ -660,9 +669,27 @@ function App() {
     }
   };
 
+  // 6. Sign Out From Dashboard
+  // 1. This is what "Sign Out" button calls
+  const handleVisitorLogout = (id) => {
+    const visitor = visitors.find((v) => v.id === id);
 
-  // 6. Sign Out (From Dashboard)
-  const handleVisitorLogout = async (id) => {
+    if (visitor?.type?.toLowerCase() === "contractor") {
+      setVisitorToSignOut(id); // Opens the modal
+    } else {
+      executeApiLogout(id); // Regular logout
+    }
+  };
+  // 2.  what the Modal calls
+  const confirmContractorExit = () => {
+    if (visitorToSignOut) {
+      executeApiLogout(visitorToSignOut);
+      setVisitorToSignOut(null); // Closes the modal
+    }
+  };
+  // 3.  The actual API logic
+  const executeApiLogout = async (id) => {
+    const visitor = visitors.find((v) => v.id === id);
     try {
       const response = await fetch(`${API_BASE_URL}/api/exit-visitor/${id}`, {
         method: "POST",
@@ -670,15 +697,12 @@ function App() {
       });
 
       const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.message || "Failed to sign out visitor.");
-      }
+      if (!response.ok)
+        throw new Error(result.message || "Failed to sign out.");
 
       showNotification(result.message, "success");
       fetchVisitors();
     } catch (err) {
-      console.error("Logout Error:", err.message);
       showNotification(`Logout Failed: ${err.message}`, "error");
     }
   };
@@ -698,7 +722,7 @@ function App() {
 
     const hours = Math.floor(diffInMilliseconds / (1000 * 60 * 60));
     const minutes = Math.floor(
-      (diffInMilliseconds % (1000 * 60 * 60)) / (1000 * 60)
+      (diffInMilliseconds % (1000 * 60 * 60)) / (1000 * 60),
     );
 
     let durationString = "";
@@ -723,7 +747,7 @@ function App() {
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(
-          errorData.message || `HTTP error! status: ${response.status}`
+          errorData.message || `HTTP error! status: ${response.status}`,
         );
       }
 
@@ -750,7 +774,7 @@ function App() {
       setFilteredHistoryData(fetchedRecords);
       showNotification(
         `History fetch complete. Found ${fetchedRecords.length} records.`,
-        "success"
+        "success",
       );
     } catch (e) {
       console.error("Error fetching history records:", e.message);
@@ -773,7 +797,7 @@ function App() {
             .toLowerCase()
             .includes(query) ||
           record.first_name.toLowerCase().includes(query) ||
-          record.last_name.toLowerCase().includes(query)
+          record.last_name.toLowerCase().includes(query),
       );
     }
 
@@ -809,7 +833,7 @@ function App() {
     setFilteredHistoryData(recordsToFilter);
     showNotification(
       `Filtered data applied. Found ${recordsToFilter.length} records.`,
-      "blue"
+      "blue",
     );
   };
 
@@ -832,7 +856,7 @@ function App() {
       }
       setSortConfig({ key, direction });
     },
-    [sortConfig]
+    [sortConfig],
   );
 
   // handle the print function
@@ -840,7 +864,7 @@ function App() {
     window.print();
     showNotification(
       "Print/PDF dialog opened. Ensure the history table is visible.",
-      "blue"
+      "blue",
     );
   };
 
@@ -856,16 +880,30 @@ function App() {
       body { font-family: 'Inter', sans-serif; }
     `}</style>
       <script src="https://cdn.tailwindcss.com"></script>
+      {/*  Modal logic (onClose must be false) */}
+      {showTutorial && <TutorialModal onClose={() => setShowTutorial(false)} />}
+
+      {/* Added a Button to trigger the help */}
+      <button
+        onClick={() => setShowTutorial(true)}
+        className="absolute top-0 right-50 flex items-center gap-2 px-8 py-2 bg-white text-indigo-800 rounded-lg font-bold text-xs shadow-md hover:bg-indigo-50 border border-indigo-200 transition-all"
+      >
+        <HelpCircle size={16} />
+        Help Guide
+      </button>
 
       {/* Header */}
       <div className="flex flex-col items-center w-full mb-8 relative">
         <img
-      src="salvation-army-logo.png"
-      alt="The Salvation Army Red Shield Logo"
-      className="absolute left-0 top-0 w-28 h-28 object-contain print-show-logo"
-      // Fallback in case the image path is broken
-      onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/96x96/DA251C/ffffff?text=TSA'; }}
-    />
+          src="salvation-army-logo.png"
+          alt="The Salvation Army Red Shield Logo"
+          className="absolute left-0 top-0 w-28 h-28 object-contain print-show-logo"
+          // Fallback in case the image path is broken
+          onError={(e) => {
+            e.target.onerror = null;
+            e.target.src = "https://placehold.co/96x96/DA251C/ffffff?text=TSA";
+          }}
+        />
         <h1 className="text-4xl font-extrabold text-blue-800 mb-2">
           The Salvation Army Social Services
         </h1>
@@ -903,7 +941,7 @@ function App() {
                   showRegistration
                     ? "Back to Dashboard"
                     : "Registration Mode Activated",
-                  "blue"
+                  "blue",
                 );
               }}
               className="flex-1 min-w-[200px] py-3 px-4 bg-purple-600 text-white font-semibold rounded-lg shadow-xl hover:bg-purple-700 transition-colors"
@@ -941,7 +979,7 @@ function App() {
             setEditFormData={setEditFormData}
             handleLogin={handleLogin}
             handleUpdate={handleUpdateAndLogin}
-            isAgreementCheckedAdult={isAgreementCheckedAdult} 
+            isAgreementCheckedAdult={isAgreementCheckedAdult}
             setIsAgreementCheckedAdult={setIsAgreementCheckedAdult}
             isAgreementCheckedChild={isAgreementCheckedChild}
             setIsAgreementCheckedChild={setIsAgreementCheckedChild}
@@ -1022,6 +1060,11 @@ function App() {
         entryTime={missedEntryTime}
         setEntryTime={setMissedEntryTime}
         confirmAction={confirmRecordMissedVisit}
+      />
+      <ContractorHandoverModal
+        isOpen={!!visitorToSignOut}
+        onConfirm={confirmContractorExit}
+        onCancel={() => setVisitorToSignOut(null)}
       />
     </div>
   );

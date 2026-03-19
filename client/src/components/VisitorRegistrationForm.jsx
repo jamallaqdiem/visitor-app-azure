@@ -219,11 +219,11 @@ const VisitorRegistrationForm = ({
         </div>
         {/* Photo and Dependents Section */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t">
-          {/* Photo Upload */}         {" "}
+          {/* Photo Upload */}{" "}
           <div className="md:col-span-1 flex flex-col items-center space-y-3">
-                       {" "}
+            {" "}
             <label className="text-sm font-medium text-gray-700">
-                 Visitor Photo ID
+              Visitor PhotoID
             </label>
             <div className="w-32 h-32 rounded-lg overflow-hidden bg-gray-200 flex items-center justify-center border-2 border-gray-300 shadow-inner">
               {capturedImage || photoPreviewUrl ? (
