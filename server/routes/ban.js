@@ -35,7 +35,7 @@ function createBanVisitorRouter(dbService) {
       // Execute the update query
       const result = await dbService.executeQuery(updateSql, updateInputs);
 
-      // Check if any rows were affected (i.e., if the visitor ID existed)
+      // Check if any rows were affected ( if the visitor ID existed)
       if (result.rowsAffected && result.rowsAffected[0] === 0) {
         return res.status(404).json({ message: "Visitor not found." });
       }
@@ -47,11 +47,9 @@ function createBanVisitorRouter(dbService) {
     } catch (err) {
       // Handle any database or general server errors
       console.error("Azure SQL Error banning visitor:", err.message);
-      return res
-        .status(500)
-        .json({
-          error: "A database error occurred while trying to ban the visitor.",
-        });
+      return res.status(500).json({
+        error: "A database error occurred while trying to ban the visitor.",
+      });
     }
   });
 

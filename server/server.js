@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -70,6 +71,14 @@ const upload = multer({
 dbService.connectDb()
     .then(() => {
         console.log("Database connection pool initialized.");
+        console.log("--- Starting Data Retention Compliance Cleanup Job ---");
+        runDataComplianceCleanup(dbService);
+        const PORT = process.env.PORT || 3001;
+        app.listen(PORT, () => {
+            console.log(`🚀 Backend Server is LIVE on port ${PORT}`);
+            console.log("Ready for frontend requests...");
+        });
+        
     })
     .catch(error => {
         console.error('Initial database connection failed. Endpoints may fail.', error);
@@ -87,7 +96,5 @@ app.use("/api", createSearchVisitorsRouter(dbService));
 app.use("/api", createMissedVisitRouter(dbService)); 
 app.use("/api", createHistoryRouter(dbService)); 
 
-// Running compliance cleanup job 
-runDataComplianceCleanup(dbService);
 
 module.exports = app;

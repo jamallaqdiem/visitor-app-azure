@@ -1,83 +1,127 @@
 const sql = require("mssql");
 const { DefaultAzureCredential } = require("@azure/identity");
 
-// Configuring connection using environment variables.
-const config = { 
-  server: process.env.DB_SERVER, 
-  database: process.env.DB_NAME, 
-  port: parseInt(process.env.DB_PORT || '1433', 10),
+const config = {
+  server: process.env.DB_SERVER,
+  database: process.env.DB_NAME,
+  port: parseInt(process.env.DB_PORT || "1433", 10),
   options: {
-    encrypt: true, 
+    encrypt: true,
     enableArithAbort: true,
-    trustServerCertificate: false, 
+    trustServerCertificate: false,
   },
-  pool: {
-    max: 10,
-    min: 0,
-    idleTimeoutMillis: 30000,
-  },
+  pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
 };
 
 let pool;
 
 async function connectDb() {
   try {
-    // 1. Get the Default Azure Credential
-    const credential = new DefaultAzureCredential();
-
-    // 2. Explicitly acquire the access token for the Azure SQL resource endpoint.
-    console.log("Acquiring token via Managed Identity...");
-    const accessToken = await credential.getToken("https://database.windows.net/.default"); 
-
-    // 3. Define the configuration using 'azure-active-directory-access-token'
-    const finalConfig = {
-      ...config,
-      authentication: {
-        type: 'azure-active-directory-access-token', // Changed type to token-based
-        options: {
-          token: accessToken.token // CORRECT: Pass the string token here
+    // 1. Check if pool exists
+    if (pool) {
+      if (pool.connected) {
+        try {
+          //  A health check
+          // If the network was cut, this will fail immediately
+          await pool.request().query("SELECT 1");
+          return pool;
+        } catch (pingErr) {
+          console.log(
+            "📡 Connection stale or network changed. Reconnecting...",
+          );
+          try {
+            await pool.close();
+          } catch (e) {
+            /* ignore */
+          }
+          pool = null; // Force a fresh start below
         }
+      } else {
+        pool = null;
       }
-    };
-    
-    console.log("Attempting to connect to Azure SQL...");
-    pool = await sql.connect(finalConfig);
+    }
+
+    let finalConfig;
+    if (process.env.DB_USER && process.env.DB_PASSWORD) {
+      console.log("🔐 Using SQL Authentication...");
+      finalConfig = {
+        ...config,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        authentication: { type: "default" },
+      };
+    } else {
+      console.log("☁️ Acquiring Azure Token...");
+      const credential = new DefaultAzureCredential();
+      const accessToken = await credential.getToken(
+        "https://database.windows.net/.default",
+      );
+      finalConfig = {
+        ...config,
+        authentication: {
+          type: "azure-active-directory-access-token",
+          options: { token: accessToken.token },
+        },
+      };
+    }
+
+    // 3. Create the new connection
+    pool = await new sql.ConnectionPool(finalConfig).connect();
     console.log("✅ Azure SQL connection pool created successfully.");
     return pool;
   } catch (err) {
     console.error("CRITICAL ERROR: Initial database connection failed.", err);
+    pool = null; // Reset so we can try again next time
     throw err;
   }
 }
-/**
- * Core secure query execution function. Used by all routers.
- * @param {string} querySql The T-SQL query string.
- * @param {Array<{name: string, type: any, value: any}>} params Array of parameters for security.
- * @returns {Promise<Array<Object>>} The results from the query.
- */
-async function executeQuery(querySql, params = []) {
-  if (!pool) {
-    throw new Error(
-      "Database connection pool is not initialized. Call connectDb() first."
-    );
-  }
 
-  try {
-    const request = pool.request();
-    // Add parameters to prevent SQL Injection 
-    for (const param of params) {
-      request.input(param.name, param.type, param.value);
+async function executeQuery(querySql, params = [], retries = 3) {
+  let lastError;
+
+  for (let i = 0; i < retries; i++) {
+    try {
+      // 1. Get an active pool (our connectDb now handles the health check!)
+      const activePool = await connectDb();
+
+      const request = activePool.request();
+      for (const param of params) {
+        request.input(param.name, param.type, param.value);
+      }
+
+      // 2. Try the query
+      return await request.query(querySql);
+    } catch (err) {
+      lastError = err;
+
+      // 3. Check if the error is "Transient" (meaning it's worth retrying)
+      const isNetworkError =
+        err.message.includes("closed") ||
+        err.message.includes("connection") ||
+        err.message.includes("timeout") ||
+        err.message.includes("socket");
+
+      if (isNetworkError && i < retries - 1) {
+        const delay = (i + 1) * 1000; // Wait 1s, then 2s
+        console.warn(
+          `⚠️ Connection lost. Retry ${i + 1}/${retries} in ${delay}ms...`,
+        );
+
+        // Force pool reset so next attempt starts fresh
+        pool = null;
+
+        // Wait before next attempt
+        await new Promise((res) => setTimeout(res, delay));
+        continue;
+      }
+
+      // 4. If it's a code error throw it
+      console.error(`❌ SQL Execution Final Failure:`, err.message);
+      throw new Error(`Database error: ${err.message}`);
     }
-
-    const result = await request.query(querySql);
-    return result.recordset;
-  } catch (err) {
-    console.error("SQL Execution Error:", err.message);
-    throw new Error(`Database error during execution: ${err.message}`);
   }
 }
 
-//Logs an event into the AuditLogs table.
 async function logAudit({
   eventName,
   status,
@@ -86,7 +130,7 @@ async function logAudit({
   dependentsDeleted = 0,
 }) {
   const query = `
-        INSERT INTO AuditLogs (EventName, Timestamp, Status, ProfilesDeleted, VisitsDeleted, DependentsDeleted)
+        INSERT INTO audit_logs (event_name, timestamp, status, profiles_deleted, visits_deleted, dependents_deleted)
         VALUES (@eventName, GETUTCDATE(), @status, @profilesDeleted, @visitsDeleted, @dependentsDeleted);
     `;
   const params = [
@@ -99,16 +143,10 @@ async function logAudit({
 
   try {
     await executeQuery(query, params);
-    console.log(`Audit log recorded: ${eventName} - ${status}`);
+    console.log(`Audit log recorded: ${eventName}`);
   } catch (err) {
     console.error("CRITICAL: Failed to log audit event.", err.message);
-    // Continue application flow even if audit logging fails
   }
 }
 
-module.exports = {
-  connectDb,
-  executeQuery,
-  logAudit,
-  sqlTypes: sql, // Exporting the mssql types so routers can define parameter types (e.g., sql.Int)
-};
+module.exports = { connectDb, executeQuery, logAudit, sqlTypes: sql };

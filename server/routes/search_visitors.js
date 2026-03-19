@@ -7,22 +7,26 @@ const sql = require("mssql");
  * @param {object} dbService - The Azure SQL database service wrapper (e.g., with executeQuery).
  * @returns {express.Router} - An Express router with the search endpoint.
  */
-function createSearchVisitorsRouter(dbService,sql) {
+function createSearchVisitorsRouter(dbService) {
   const router = express.Router();
 
   // Endpoint to search for visitors by name
   router.get("/visitor-search", async (req, res) => {
     const searchTerm = req.query.name;
     if (!searchTerm) {
-      return res.status(400).json({ message: "Search term 'name' is required." });
+      return res
+        .status(400)
+        .json({ message: "Search term 'name' is required." });
     }
 
     // 1. Prepare search terms and parameters
-    const searchTerms = searchTerm.split(" ").filter(t => t.length > 0);
-    const likeTerms = searchTerms.map(term => `%${term}%`);
+    const searchTerms = searchTerm.split(" ").filter((t) => t.length > 0);
+    const likeTerms = searchTerms.map((term) => `%${term}%`);
 
     if (searchTerms.length === 0) {
-        return res.status(400).json({ message: "Search term is required and cannot be empty." });
+      return res
+        .status(400)
+        .json({ message: "Search term is required and cannot be empty." });
     }
 
     let whereClauses = [];
@@ -30,15 +34,21 @@ function createSearchVisitorsRouter(dbService,sql) {
 
     // Dynamically build conditions for each search term
     searchTerms.forEach((_, index) => {
-        // Create a unique parameter name for each pair of LIKE conditions
-        const paramName = `term${index}`;
-        whereClauses.push(`(T1.first_name LIKE @${paramName} OR T1.last_name LIKE @${paramName})`);
-        
-        // Add the parameter to the inputs array
-        inputs.push({ name: paramName, type: sql.NVarChar, value: likeTerms[index] });
+      // Create a unique parameter name for each pair of LIKE conditions
+      const paramName = `term${index}`;
+      whereClauses.push(
+        `(T1.first_name LIKE @${paramName} OR T1.last_name LIKE @${paramName})`,
+      );
+
+      // Add the parameter to the inputs array
+      inputs.push({
+        name: paramName,
+        type: sql.NVarChar,
+        value: likeTerms[index],
+      });
     });
 
-    const whereClause = "WHERE " + whereClauses.join(' AND ');
+    const whereClause = "WHERE " + whereClauses.join(" AND ");
 
     // 2. Construct the main T-SQL query
     const query = `
@@ -77,29 +87,34 @@ function createSearchVisitorsRouter(dbService,sql) {
     `;
 
     try {
-      // 3. Execute the query
-      const rows = await dbService.executeQuery(query, inputs);
+      // 1. Execute the query
+      const result = await dbService.executeQuery(query, inputs);
 
-      // 4. Process results to clean up data and parse JSON dependents
+      // 2. Access the recordset (the actual array of data)
+      // We add a safety check: if result is null, we use an empty array []
+      const rows = result && result.recordset ? result.recordset : [];
+
       const resultsWithUrls = rows.map((row) => {
         let dependentsData = [];
-        
+
         if (row.dependents_json) {
           try {
-            dependentsData = JSON.parse(row.dependents_json);
+            // Handle JSON parsing safely for Azure SQL strings
+            dependentsData =
+              typeof row.dependents_json === "string"
+                ? JSON.parse(row.dependents_json)
+                : row.dependents_json;
           } catch (parseErr) {
             console.error("Failed to parse dependents JSON:", parseErr.message);
           }
         }
-        
+
         return {
           ...row,
-          // Construct the full photo URL for the client
           photo: row.photo_path
             ? `${req.protocol}://${req.get("host")}/${row.photo_path}`
             : null,
           dependents: dependentsData,
-          // Remove raw photo path from the final output for cleaner data structure
           photo_path: undefined,
           dependents_json: undefined,
         };
@@ -107,8 +122,8 @@ function createSearchVisitorsRouter(dbService,sql) {
 
       res.status(200).json(resultsWithUrls);
     } catch (err) {
-      console.error("Azure SQL Error in /visitor-search:", err.message);
-      res.status(500).json({ error: "Failed to search visitors due to a database error." });
+      console.error(" Azure SQL Error in /visitor-search:", err.message);
+      res.status(500).json({ error: "Search failed." });
     }
   });
 

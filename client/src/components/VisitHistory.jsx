@@ -1,13 +1,5 @@
 import React from "react";
-import {
-  Search,
-  ChevronDown,
-  RefreshCcw,
-  Loader,
-  ArrowUp,
-  ArrowDown,
-  WifiOff,
-} from "lucide-react";
+import { Search, ChevronDown, RefreshCcw, Loader, WifiOff } from "lucide-react";
 
 /**
  * Formats an ISO string timestamp into separate date and time strings.
@@ -103,13 +95,11 @@ function HistoryDashboard({
     <div className="p-4 font-['Inter'] print-report-container max-w-max">
       <div className="mb-4 text-center">
         <h1 className="text-2xl font-bold text-gray-900 mb-1">
-                    Visitors History Report        
+          Visitors History Report
         </h1>
-        <p className="text-sm text-gray-600">
-                    Generated on: {reportDate}       
-        </p>
+        <p className="text-sm text-gray-600">Generated on: {reportDate}</p>
       </div>
-            {/* --- Connection Status and Fallback Message --- */}   
+      {/* --- Connection Status and Fallback Message --- */}
       {statusMessage && (
         <div
           className={`mb-6 p-4 rounded-lg shadow-md flex items-center print:hidden ${
@@ -118,13 +108,13 @@ function HistoryDashboard({
               : "bg-red-100 text-red-800 border-red-300"
           } border`}
         >
-                    {!isOnline && <WifiOff size={20} className="mr-3" />}       
-            <span className="font-medium">{statusMessage}</span>       
+          {!isOnline && <WifiOff size={20} className="mr-3" />}
+          <span className="font-medium">{statusMessage}</span>
         </div>
       )}
-            {/* --- Filter Bar --- */}     
+      {/* --- Filter Bar --- */}
       <div className="w-full flex flex-col md:flex-row gap-4 mb-6 p-4 bg-indigo-50 rounded-xl shadow-inner print:hidden">
-                {/* Search Input */}       
+        {/* Search Input */}
         <div className="relative flex-grow">
           <Search
             className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-400"
@@ -138,7 +128,7 @@ function HistoryDashboard({
             className="w-full pl-5 pr-4 py-2 border border-indigo-200 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"
           />
         </div>
-                {/* Date Filters */}       
+        {/* Date Filters */}
         <div className="flex gap-4 w-full md:w-auto">
           <input
             type="date"
@@ -155,7 +145,7 @@ function HistoryDashboard({
             aria-label="End Date"
           />
         </div>
-                {/* Action Buttons */}       
+        {/* Action Buttons */}
         <div className="flex gap-2">
           <button
             onClick={onApplyFilters} // Calls the fetching logic in the parent
@@ -169,14 +159,14 @@ function HistoryDashboard({
             ) : (
               <Search size={18} className="mr-2" />
             )}
-                        Apply Filters          
+            Apply Filters
           </button>
           <button
             onClick={onClearFilters} // Calls the reset logic in the parent
             className="flex items-center justify-center px-4 py-2 font-semibold text-indigo-700 bg-white border border-indigo-200 rounded-lg shadow-md hover:bg-indigo-50 transition duration-150"
           >
-                        <RefreshCcw size={18} className="mr-2" />           
-            Reset          
+            <RefreshCcw size={18} className="mr-2" />
+            Reset
           </button>
           <button
             onClick={handleExport}
@@ -195,14 +185,14 @@ function HistoryDashboard({
               className="mr-2"
             >
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="7 10 12 15 17 10" />
-                            <line x1="12" x2="12" y1="15" y2="3" />             
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" x2="12" y1="15" y2="3" />
             </svg>
-                        Export PDF          
+            Export PDF
           </button>
         </div>
       </div>
-            {/*         --- Data Table ---         */}     
+      {/*         --- Data Table ---         */}
       <div className="shadow-2xl rounded-xl w-full px-0">
         <table className=" table-auto divide-y divide-gray-200">
           <thead className="bg-indigo-700 text-white sticky top-0">
@@ -216,8 +206,8 @@ function HistoryDashboard({
                   }`}
                 >
                   <div className="flex items-center whitespace-nowrap">
-                                        {col.label}                   
-                    {col.sortable && getSortIcon(col.key)}                 
+                    {col.label}
+                    {col.sortable && getSortIcon(col.key)}
                   </div>
                 </th>
               ))}
@@ -234,7 +224,7 @@ function HistoryDashboard({
                     size={24}
                     className="animate-spin inline-block mr-2"
                   />{" "}
-                                    Loading records...                
+                  Loading records...
                 </td>
               </tr>
             ) : displayData.length === 0 ? (
@@ -255,77 +245,76 @@ function HistoryDashboard({
                   className="hover:bg-indigo-50 transition duration-100 avoid-break"
                 >
                   <td className="px-4 py-4 text-sm font-medium text-gray-900 break-words max-w-min align-middle">
-                                        {visit.first_name} {visit.last_name}   
+                    {visit.first_name} {visit.last_name}
                   </td>
                   <td className="px-4 py-4 text-sm font-medium text-gray-900 max-w-[50px] align-middle">
-                                        {visit.known_as || "--"}             
+                    {visit.known_as || "--"}
                   </td>
-                                    {/* Entry Time  */}                 
+                  {/* Entry Time  */}
                   <td className="px-4 py-4 text-sm text-gray-500 whitespace-nowrap align-middle">
                     <div className="font-medium text-gray-800 leading-tight w-fit">
-                                            {formatDate(visit.entry_time).date} 
+                      {formatDate(visit.entry_time).date} 
                     </div>
                     <div className="text-xs text-green-500 leading-tight w-fit">
-                                            {formatDate(visit.entry_time).time} 
+                      {formatDate(visit.entry_time).time} 
                     </div>
                   </td>
-                                    {/* Exit Time */}                 
+                  {/* Exit Time */}
                   <td className="px-4 py-4 text-sm whitespace-nowrap align-middle">
                     {visit.exit_time ? (
                       <div className="font-medium text-gray-800 leading-tight w-fit">
-                                               {" "}
-                        {formatDate(visit.exit_time).date}                     
+                        {" "}
+                        {formatDate(visit.exit_time).date}
                       </div>
                     ) : (
                       <span className="px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 break-words max-w-[10rem]">
-                                                Still Checked In            
+                        Still Checked In
                       </span>
                     )}
                     {visit.exit_time && (
                       <div className="text-xs text-red-500 leading-tight w-fit">
-                                               {" "}
-                        {formatDate(visit.exit_time).time}                     
+                        {" "}
+                        {formatDate(visit.exit_time).time}
                       </div>
                     )}
                   </td>
                   <td className="px-4 py-4 text-sm font-medium text-gray-900 max-w-[50px] align-middle">
-                                        {visit.address || "--"}               
+                    {visit.address || "--"}
                   </td>
-                                    {/* Phone / Unit */}                 
+                  {/* Phone / Unit */}
                   <td className="px-4 py-4 text-sm text-gray-500 break-words max-w-[50px] align-middle">
                     <div className="font-semibold text-gray-700">
-                                            {visit.phone_number || "--"}   
+                      {visit.phone_number || "--"}
                     </div>
                     <div className="text-xs text-gray-400">
-                                            Unit/flat: {visit.unit || "--"}   
+                      Unit/flat: {visit.unit || "--"}
                     </div>
                   </td>
-                                    {/* Reason / Type */}                 
+                  {/* Reason / Type */}
                   <td className="px-3 py-3 text-sm text-gray-500 break-words max-w-[50px] align-middle">
                     <div className="text-xs text-indigo-400 uppercase">
-                                            {visit.type || "--"}         
+                      {visit.type || "--"}
                     </div>
                     <div className="font-semibold whitespace-normal max-w-full leading-snug">
-                                            {visit.reason_for_visit || "--"}   
+                      {visit.reason_for_visit || "--"}
                     </div>
                     {visit.company_name && (
                       <div className="text-xs text-gray-400 whitespace-normal leading-tight">
-                                                Company: {visit.company_name}   
+                        Company: {visit.company_name}
                       </div>
                     )}
                   </td>
-                                    {/* Dependents */}                 
+                  {/* Dependents */}
                   <td className="px-4 py-4 text-sm text-gray-500 max-w-[100px] align-middle">
                     {visit.dependents && visit.dependents.length > 0 ? (
                       <ul className="pl-5 text-xs text-gray-600 list-none p-0 m-0">
-                                               {" "}
+                        {" "}
                         {visit.dependents.map((dep, index) => (
                           <li
                             key={index}
                             className="pl-3 relative before:content-['•'] before:absolute before:left-0 before:text-indigo-400"
                           >
-                                                        {dep.full_name} (Age:{" "}
-                            {dep.age})                          {" "}
+                            {dep.full_name} (Age: {dep.age}){" "}
                           </li>
                         ))}
                       </ul>
@@ -335,14 +324,14 @@ function HistoryDashboard({
                       </span>
                     )}
                   </td>
-                                    {/* Status */}                 
+                  {/* Status */}
                   <td className="px-4 py-4 text-sm max-w-[10px] align-middle">
                     <span
                       className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                         visit.is_banned ? " text-red-600" : " text-blue-800"
                       }`}
                     >
-                      {visit.is_banned ? "BANNED" : "Clear"}   
+                      {visit.is_banned ? "BANNED" : "Clear"}
                     </span>
                   </td>
                   <td className="px-4 py-4 text-sm max-w-sm align-middle">
@@ -356,7 +345,6 @@ function HistoryDashboard({
                       {visit.mandatory_acknowledgment_taken
                         ? "COMPLETED"
                         : "PENDING"}
-                         
                     </span>
                   </td>
                 </tr>
@@ -366,7 +354,7 @@ function HistoryDashboard({
         </table>
       </div>
       <footer className="mt-6 text-center text-sm text-gray-400">
-                Displaying {displayData.length} total records.
+        Displaying {displayData.length} total records.
       </footer>
     </div>
   );

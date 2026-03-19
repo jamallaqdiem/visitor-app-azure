@@ -98,3 +98,7 @@ GO
 CREATE NONCLUSTERED INDEX IX_visits_OnSite ON visits (exit_time) INCLUDE (visitor_id, entry_time);
 CREATE UNIQUE NONCLUSTERED INDEX IX_visitors_FullName ON visitors (first_name, last_name);
 GO
+-- not allow duplicates
+CREATE UNIQUE INDEX UIX_ActiveVisits 
+ON visits (visitor_id) 
+WHERE exit_time IS NULL;

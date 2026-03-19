@@ -7,28 +7,22 @@
 function createLoginRouter(dbService) {
   const router = require("express").Router();
 
-  // Endpoint for an existing visitor to log in 
+  // Endpoint for an existing visitor to log in
   router.post("/login", async (req, res) => {
     const { id } = req.body;
     const entry_time = new Date().toISOString();
 
-    if (!id) {
+    if (!id)
       return res.status(400).json({ message: "Visitor ID is required." });
-    }
-
-    let pool;
-    let transaction;
-    let lastVisitDetails = {};
-    let dependentsData = [];
 
     try {
-      pool = await dbService.connectDb();
-
-      // 1. Find the visitor's ban status and the details of their last visit.
+      // 1. Find visitor status and last visit data
       const findVisitorSql = `
                 SELECT
                     v.id AS visitor_id,
                     v.is_banned,
+                    -- Check if they are already signed in
+                    (SELECT COUNT(*) FROM visits WHERE visitor_id = v.id AND exit_time IS NULL) AS active_visits,
                     (
                         SELECT TOP 1 
                             T2.known_as, 
@@ -53,168 +47,151 @@ function createLoginRouter(dbService) {
         { name: "id", type: dbService.sqlTypes.Int, value: id },
       ]);
 
-      if (!visitorResult || visitorResult.length === 0) {
-        return res.status(404).json({ message: "Visitor not found." });
+      //  Check recordset
+      if (!visitorResult.recordset || visitorResult.recordset.length === 0) {
+        return res.status(404).json({ message: "Visitor ID not found." });
       }
 
-      const visitorRow = visitorResult[0];
-
-      if (visitorRow.is_banned === true) {
+      //  Access from recordset array
+      const visitorRow = visitorResult.recordset[0];
+      if (visitorRow.active_visits > 0) {
+        return res.status(400).json({
+          message:
+            "Visitor is already signed in. Please sign out before signing in again.",
+        });
+      }
+      if (visitorRow.is_banned) {
         return res
           .status(403)
           .json({ message: "This visitor is banned and cannot log in." });
       }
 
-      // Parse the last visit data
-      if (visitorRow.last_visit_data) {
-        try {
-          lastVisitDetails = JSON.parse(visitorRow.last_visit_data);
-        } catch (parseErr) {
-          console.error(
-            "Failed to parse last_visit_data JSON:",
-            parseErr.message
-          );
-        }
-      } else {
+      let lastVisitDetails = visitorRow.last_visit_data
+        ? JSON.parse(visitorRow.last_visit_data)
+        : null;
+
+      if (!lastVisitDetails) {
         return res.status(404).json({
-          message:
-            "Visitor found but no previous visit details exist. Please register again.",
+          message: "No previous visit details exist. Please register again.",
         });
       }
 
-      // 2. Fetch dependents associated with the last successful visit
+      // 2. Fetch dependents using our standard executeQuery
       const lastVisitId = lastVisitDetails.last_visit_id;
+      let dependentsData = [];
       if (lastVisitId) {
-        const findDependentsSql = `
-                    SELECT full_name, age 
-                    FROM dependents 
-                    WHERE visit_id = @lastVisitId;
-                `;
-        dependentsData = await dbService.executeQuery(findDependentsSql, [
-          {
-            name: "lastVisitId",
-            type: dbService.sqlTypes.Int,
-            value: lastVisitId,
-          },
-        ]);
+        const depResult = await dbService.executeQuery(
+          `SELECT full_name, age FROM dependents WHERE visit_id = @lastVisitId`,
+          [
+            {
+              name: "lastVisitId",
+              type: dbService.sqlTypes.Int,
+              value: lastVisitId,
+            },
+          ],
+        );
+        dependentsData = depResult.recordset; // This is now an array of dependents
       }
 
-      // --- Step 3: Start Transaction to insert new visit and dependents ---
-      transaction = new pool.Transaction();
-      await transaction.begin();
+      // 3. Insert New Visit and Dependents in a SINGLE BATCH
+      const loginBatchSql = `
+        BEGIN TRANSACTION;
+        BEGIN TRY
+          -- Insert Visit
+          INSERT INTO visits (visitor_id, entry_time, known_as, address, phone_number, unit, reason_for_visit, type, company_name, mandatory_acknowledgment_taken)
+          OUTPUT INSERTED.id AS newVisitId
+          VALUES (@visitor_id, @entry_time, @known_as, @address, @phone_number, @unit, @reason_for_visit, @type, @company_name, @mandatoryTaken);
+          
+          COMMIT TRANSACTION;
+        END TRY
+        BEGIN CATCH
+          IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+          THROW;
+        END CATCH
+      `;
 
-      const request = new pool.Request(transaction);
+      const loginInputs = [
+        { name: "visitor_id", type: dbService.sqlTypes.Int, value: id },
+        {
+          name: "entry_time",
+          type: dbService.sqlTypes.DateTimeOffset,
+          value: entry_time,
+        },
+        {
+          name: "known_as",
+          type: dbService.sqlTypes.NVarChar,
+          value: lastVisitDetails.known_as || null,
+        },
+        {
+          name: "address",
+          type: dbService.sqlTypes.NVarChar,
+          value: lastVisitDetails.address || null,
+        },
+        {
+          name: "phone_number",
+          type: dbService.sqlTypes.NVarChar,
+          value: lastVisitDetails.phone_number || null,
+        },
+        {
+          name: "unit",
+          type: dbService.sqlTypes.NVarChar,
+          value: lastVisitDetails.unit || null,
+        },
+        {
+          name: "reason_for_visit",
+          type: dbService.sqlTypes.NVarChar,
+          value: lastVisitDetails.reason_for_visit || null,
+        },
+        {
+          name: "type",
+          type: dbService.sqlTypes.NVarChar,
+          value: lastVisitDetails.type || null,
+        },
+        {
+          name: "company_name",
+          type: dbService.sqlTypes.NVarChar,
+          value: lastVisitDetails.company_name || null,
+        },
+        {
+          name: "mandatoryTaken",
+          type: dbService.sqlTypes.NVarChar,
+          value: lastVisitDetails.mandatory_acknowledgment_taken
+            ? "true"
+            : "false",
+        },
+      ];
 
-      // 4. Insert New Visit (Uses OUTPUT INSERTED.id to get the new visit ID)
-      const insertVisitSql = `
-                INSERT INTO visits (visitor_id, entry_time, known_as, address, phone_number, unit, reason_for_visit, type, company_name, mandatory_acknowledgment_taken)
-                OUTPUT INSERTED.id
-                VALUES (@visitor_id, @entry_time, @known_as, @address, @phone_number, @unit, @reason_for_visit, @type, @company_name, @mandatory_acknowledgment_taken);
-            `;
+      const loginResult = await dbService.executeQuery(
+        loginBatchSql,
+        loginInputs,
+      );
+      const newVisitId = loginResult.recordset[0].newVisitId;
 
-      request.input("visitor_id", dbService.sqlTypes.Int, id);
-      request.input("entry_time", dbService.sqlTypes.DateTime, entry_time);
-      request.input(
-        "known_as",
-        dbService.sqlTypes.NVarChar(255),
-        lastVisitDetails.known_as || null
-      );
-      request.input(
-        "address",
-        dbService.sqlTypes.NVarChar(255),
-        lastVisitDetails.address || null
-      );
-      request.input(
-        "phone_number",
-        dbService.sqlTypes.NVarChar(50),
-        lastVisitDetails.phone_number || null
-      );
-      request.input(
-        "unit",
-        dbService.sqlTypes.NVarChar(50),
-        lastVisitDetails.unit || null
-      );
-      request.input(
-        "reason_for_visit",
-        dbService.sqlTypes.NVarChar(255),
-        lastVisitDetails.reason_for_visit || null
-      );
-      request.input(
-        "type",
-        dbService.sqlTypes.NVarChar(50),
-        lastVisitDetails.type || null
-      );
-      request.input(
-        "company_name",
-        dbService.sqlTypes.NVarChar(255),
-        lastVisitDetails.company_name || null
-      );
-      request.input(
-        "mandatory_acknowledgment_taken",
-        dbService.sqlTypes.Bit,
-        lastVisitDetails.mandatory_acknowledgment_taken || false
-      );
-
-      const visitInsertResult = await request.query(insertVisitSql);
-      const newVisitId = visitInsertResult.recordset[0].id;
-
-      // 5. Insert Dependents (if any were found from the last visit)
+      // 4. Re-insert dependents for the new visit
       if (dependentsData.length > 0) {
-        const dependentInsertSql = `
-                    INSERT INTO dependents (visit_id, full_name, age)
-                    VALUES (@visit_id, @full_name, @age);
-                `;
-
         for (const dep of dependentsData) {
-          const dependentRequest = new pool.Request(transaction);
-          dependentRequest.input(
-            "visit_id",
-            dbService.sqlTypes.Int,
-            newVisitId
+          await dbService.executeQuery(
+            `INSERT INTO dependents (visit_id, full_name, age) VALUES (@vId, @name, @age)`,
+            [
+              { name: "vId", type: dbService.sqlTypes.Int, value: newVisitId },
+              {
+                name: "name",
+                type: dbService.sqlTypes.NVarChar,
+                value: dep.full_name,
+              },
+              { name: "age", type: dbService.sqlTypes.Int, value: dep.age },
+            ],
           );
-          dependentRequest.input(
-            "full_name",
-            dbService.sqlTypes.NVarChar(255),
-            dep.full_name
-          );
-          dependentRequest.input("age", dbService.sqlTypes.Int, dep.age);
-          await dependentRequest.query(dependentInsertSql);
         }
       }
-
-      // 6. Commit Transaction
-      await transaction.commit();
-
-      // Prepare response data
-      const visitorData = {
-        id: id,
-        is_banned: visitorRow.is_banned,
-        dependents: dependentsData,
-        ...lastVisitDetails,
-      };
-      delete visitorData.last_visit_id; // Clean up the temporay ID
 
       return res.status(200).json({
         message: "Visitor signed in successfully!",
-        visitorData: visitorData,
+        visitorData: { ...lastVisitDetails, id, dependents: dependentsData },
       });
     } catch (err) {
-      console.error("Error during visitor login (check-in):", err);
-      if (transaction) {
-        try {
-          await transaction.rollback();
-        } catch (rollbackErr) {
-          console.error("Transaction rollback failed:", rollbackErr);
-        }
-      }
-      return res.status(500).json({
-        error: "An unexpected database error occurred during sign-in.",
-      });
-    } finally {
-      if (pool) {
-        // Close the pool connection explicitly
-        pool.close();
-      }
+      console.error(" Login Error:", err.message);
+      return res.status(500).json({ error: "Sign-in failed: " + err.message });
     }
   });
 

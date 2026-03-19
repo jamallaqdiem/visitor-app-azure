@@ -26,109 +26,112 @@ function createUpdateVisitorRouter(dbService) {
       additional_dependents,
     } = req.body;
 
-    if (!id) {
-      return res.status(400).json({
-        message: "Visitor ID is required for re-registration.",
-      });
-    }
+    if (!id) return res.status(400).json({ message: "Visitor ID required." });
 
-    // Attempt to parse dependents immediately
-    let dependentsArray = [];
-    if (additional_dependents) {
-      try {
-        dependentsArray = JSON.parse(additional_dependents);
-      } catch (parseError) {
-        console.error("Failed to parse dependents JSON. Using fallback:", parseError.message);
-        // Fallback for non-JSON dependent string (preserving original logic)
-        dependentsArray = [
-          { full_name: additional_dependents, age: null },
-        ];
-      }
-    }
-
-    let newVisitId = null;
+    let dependentsArray = Array.isArray(additional_dependents)
+      ? additional_dependents
+      : additional_dependents
+        ? JSON.parse(additional_dependents)
+        : [];
 
     try {
-      // 1. Begin Transaction
-      await dbService.executeQuery("BEGIN TRAN;");
-
-      // 2. Verify the visitor ID exists in the system
       const verifySql = "SELECT id FROM visitors WHERE id = @visitorId";
-      const verifyInputs = [{ name: "visitorId", type: sql.Int, value: id }];
-      const visitorCheck = await dbService.executeQuery(verifySql, verifyInputs);
+      const verifyResult = await dbService.executeQuery(verifySql, [
+        { name: "visitorId", type: sql.Int, value: id },
+      ]);
 
-      if (visitorCheck.recordset.length === 0) {
-        await dbService.executeQuery("ROLLBACK TRAN;");
+      if (!verifyResult.recordset || verifyResult.recordset.length === 0) {
         return res.status(404).json({ message: "Visitor ID not found." });
       }
 
-      // 3. Insert a new visit record and retrieve the new ID using SCOPE_IDENTITY()
+      // 2. USING OUTPUT INSERTED.id
       const entry_time = new Date().toISOString();
-      const visitsSql = `
-        INSERT INTO visits (
-          visitor_id, entry_time, known_as, address, phone_number, unit, reason_for_visit, type, company_name, mandatory_acknowledgment_taken
-        ) VALUES (
-          @id, @entryTime, @knownAs, @address, @phoneNumber, @unit, @reasonForVisit, @type, @companyName, @mandatoryTaken
-        );
-        SELECT SCOPE_IDENTITY() AS newVisitId; -- Retrieve the newly created ID
+      const visitsSql = `BEGIN TRANSACTION;
+        BEGIN TRY
+          -- 1. Insert Visit and Get ID
+          INSERT INTO visits (
+            visitor_id, entry_time, known_as, address, phone_number, unit, 
+            reason_for_visit, type, company_name, mandatory_acknowledgment_taken
+          ) 
+          OUTPUT INSERTED.id AS newVisitId
+          VALUES (
+            @id, @entryTime, @knownAs, @address, @phoneNumber, @unit, 
+            @reasonForVisit, @type, @companyName, @mandatoryTaken
+          );
+          
+          COMMIT TRANSACTION;
+        END TRY
+        BEGIN CATCH
+          IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+          THROW;
+        END CATCH
       `;
-
       const visitInputs = [
         { name: "id", type: sql.Int, value: id },
-        { name: "entryTime", type: sql.NVarChar, value: entry_time },
+        { name: "entryTime", type: sql.DateTimeOffset, value: entry_time },
         { name: "knownAs", type: sql.NVarChar, value: known_as || null },
         { name: "address", type: sql.NVarChar, value: address || null },
-        { name: "phoneNumber", type: sql.NVarChar, value: phone_number || null },
+        {
+          name: "phoneNumber",
+          type: sql.NVarChar,
+          value: phone_number || null,
+        },
         { name: "unit", type: sql.NVarChar, value: unit || null },
-        { name: "reasonForVisit", type: sql.NVarChar, value: reason_for_visit || null },
+        {
+          name: "reasonForVisit",
+          type: sql.NVarChar,
+          value: reason_for_visit || null,
+        },
         { name: "type", type: sql.NVarChar, value: type || null },
-        { name: "companyName", type: sql.NVarChar, value: company_name || null },
-        { name: "mandatoryTaken", type: sql.NVarChar, value: mandatory_acknowledgment_taken || null },
+        {
+          name: "companyName",
+          type: sql.NVarChar,
+          value: company_name || null,
+        },
+        {
+          name: "mandatoryTaken",
+          type: sql.NVarChar,
+          value: mandatory_acknowledgment_taken ? "true" : "false",
+        },
       ];
 
       const visitResult = await dbService.executeQuery(visitsSql, visitInputs);
-      newVisitId = visitResult.recordset[0].newVisitId; // Extract the new ID
+      const newVisitId = visitResult.recordset[0].newVisitId;
 
-      // 4. Handle and insert dependents
+      // 4. Handle Dependents
       if (dependentsArray.length > 0) {
-        const dependentPromises = dependentsArray.map(async (dependent) => {
-          const depSql = `
-            INSERT INTO dependents (full_name, age, visit_id) 
-            VALUES (@fullName, @age, @visitId)
-          `;
-          const depInputs = [
-            { name: "fullName", type: sql.NVarChar, value: dependent.full_name },
-            { name: "age", type: sql.Int, value: dependent.age || null },
+        for (const dependent of dependentsArray) {
+          const depSql = `INSERT INTO dependents (full_name, age, visit_id) VALUES (@fullName, @age, @visitId)`;
+          await dbService.executeQuery(depSql, [
+            {
+              name: "fullName",
+              type: sql.NVarChar,
+              value: dependent.full_name,
+            },
+            {
+              name: "age",
+              type: sql.Int,
+              value: parseInt(dependent.age) || null,
+            },
             { name: "visitId", type: sql.Int, value: newVisitId },
-          ];
-          await dbService.executeQuery(depSql, depInputs);
-        });
-
-        // Wait for all dependent inserts to complete
-        await Promise.all(dependentPromises);
+          ]);
+        }
       }
-
-      // 5. Commit Transaction on success
-      await dbService.executeQuery("COMMIT TRAN;");
 
       res.status(201).json({
         message: "Visitor Updated Successfully & signed in!",
         id: newVisitId,
       });
-
     } catch (err) {
-      // 6. Rollback Transaction on error
-      console.error("Transaction Error in /update-visitor-details:", err.message);
-      // Attempt to rollback, ignoring any error that might occur during rollback itself
+      console.error("Transaction Error:", err.message);
       try {
-        await dbService.executeQuery("ROLLBACK TRAN;");
-      } catch (rollbackErr) {
-        console.error("Rollback failed:", rollbackErr.message);
+      } catch (rbErr) {
+        console.error("Rollback failed:", rbErr.message);
       }
-      return res.status(500).json({ error: "Transaction failed: " + err.message });
+
+      res.status(500).json({ error: "Update failed: " + err.message });
     }
   });
-
   return router;
 }
 
