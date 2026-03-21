@@ -407,6 +407,27 @@ function App() {
     }
   };
 
+  // handle Deleting visitors details.
+  const handleDeleteVisitor = (id) => {
+    // 1. Reset password and messages for a fresh start
+    setPassword("");
+    setMessage("");
+
+    // 2. Using the existing 'modalContext' state
+    setModalContext({
+      type: "delete", // This is the 'currentAction' key for EnterPassword
+      visitorId: id, // This is the 'currentId' key for EnterPassword
+      title: "Confirm Profile Deletion",
+      description:
+        "CRITICAL: This will permanently delete this visitor's data and photo. Please enter the Admin Password to proceed.",
+      submitText: "Delete Permanently",
+      submitColor: "bg-red-600 hover:bg-red-700", // Red color to indicate danger
+    });
+
+    // 3. Open the universal modal
+    setShowPasswordModal(true);
+  };
+
   // 2.Handle Update Details & Log In (Re-register)
   const handleUpdateAndLogin = async () => {
     if (!selectedVisitor) return;
@@ -448,7 +469,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/update-visitor-details`,
+        setP`${API_BASE_URL}/api/update-visitor-details`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -600,6 +621,40 @@ function App() {
         showNotification(`Access Denied: ${err.message}`, "error");
         setPassword("");
         return;
+      }
+    }
+    // -- Handle Delete Action --
+    else if (currentAction === "delete") {
+      try {
+        // We send the password in the body to verify authority on the backend
+        const response = await fetch(
+          `${API_BASE_URL}/api/visitors/${currentId}`,
+          {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: password }),
+          },
+        );
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || "Failed to delete visitor.");
+        }
+
+        // Success Cleanup:
+        showNotification(
+          "GDPR Erasure Complete: Visitor and files removed.",
+          "success",
+        );
+        setShowPasswordModal(false);
+        setSelectedVisitor(null); // Close the details form immediately
+        fetchVisitors(); // Refresh the main list
+      } catch (err) {
+        console.error("Delete Error:", err.message);
+        showNotification(`Deletion Failed: ${err.message}`, "error");
+        setPassword("");
+        return; // Stop here so we don't clear the context yet
       }
     }
 
@@ -978,6 +1033,7 @@ function App() {
             editFormData={editFormData}
             setEditFormData={setEditFormData}
             handleLogin={handleLogin}
+            handleDeleteVisitor={handleDeleteVisitor}
             handleUpdate={handleUpdateAndLogin}
             isAgreementCheckedAdult={isAgreementCheckedAdult}
             setIsAgreementCheckedAdult={setIsAgreementCheckedAdult}
