@@ -13,6 +13,7 @@ const VisitorDetailsForm = ({
   setIsAgreementCheckedChild,
   handleBan,
   handleUnbanClick,
+  handleDeleteVisitor,
   message,
   messageType,
   handleCancelLogIn,
@@ -411,6 +412,14 @@ const VisitorDetailsForm = ({
           className="px-8 py-3 font-bold rounded-lg bg-red-800 text-white hover:bg-red-900 transition-colors shadow-xl"
         >
           Cancel
+        </button>
+
+        {/* GDPR Delete Button */}
+        <button
+          onClick={() => handleDeleteVisitor(selectedVisitor.id)}
+          className="px-8 py-3 font-bold rounded-lg bg-white text-red-600 border-2 border-red-600 hover:bg-red-50 transition-colors shadow-xl"
+        >
+          Delete Visitor Profile
         </button>
       </div>
     </div>

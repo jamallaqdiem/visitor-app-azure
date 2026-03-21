@@ -1,3 +1,5 @@
+const fs = require("fs");
+const path = require("path");
 const express = require("express");
 const sql = require("mssql");
 
@@ -78,6 +80,62 @@ function createVisitorsRouter(dbService) {
       res
         .status(500)
         .json({ error: "Failed to retrieve active visitor data." });
+    }
+  });
+
+  // DELETE /api/visitors/:id - GDPR Permanent Erasure
+  router.delete("/visitors/:id", async (req, res) => {
+    const visitorId = req.params.id;
+    const masterPassword =
+      process.env.MASTER_PASSWORD3 || "emergency_fallback_123";
+    const { password } = req.body;
+    if (password !== masterPassword) {
+      return res
+        .status(401)
+        .json({ error: "Unauthorized: Incorrect Admin Password." });
+    }
+
+    try {
+      // 1. Get the photo path first so we know what to delete from disk later
+      const getPhotoQuery = `SELECT photo_path FROM visitors WHERE id = ${visitorId}`;
+      const photoResult = await dbService.executeQuery(getPhotoQuery);
+      const photoPath = photoResult?.recordset[0]?.photo_path;
+
+      // 2. Start the Database Deletion Chain
+      // delete in this order: Dependents -> Visits -> Visitor
+
+      // Delete Dependents linked to any of this visitor's visits
+      await dbService.executeQuery(`
+        DELETE FROM dependents 
+        WHERE visit_id IN (SELECT id FROM visits WHERE visitor_id = ${visitorId})
+      `);
+
+      // Delete all Visits for this visitor
+      await dbService.executeQuery(
+        `DELETE FROM visits WHERE visitor_id = ${visitorId}`,
+      );
+
+      // Delete the Visitor record itself
+      await dbService.executeQuery(
+        `DELETE FROM visitors WHERE id = ${visitorId}`,
+      );
+
+      // 3. Delete the physical photo file from the 'uploads' folder
+      if (photoPath) {
+        const fullPath = path.join(__dirname, "..", photoPath);
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath);
+          console.log(`Successfully deleted photo: ${fullPath}`);
+        }
+      }
+
+      res.json({
+        message:
+          "Visitor and all associated data deleted successfully (GDPR Compliant).",
+      });
+    } catch (err) {
+      console.error("❌ Delete Error:", err.message);
+      res.status(500).json({ error: "Failed to delete visitor data." });
     }
   });
 
