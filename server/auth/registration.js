@@ -1,14 +1,28 @@
 const express = require("express");
 const path = require("path");
-const fs = require("fs");
 const multer = require("multer");
-
+const { BlobServiceClient } = require("@azure/storage-blob");
 /**
  * Creates and configures a router for handling new visitor registrations.
  * @param {object} dbService - The Azure SQL database service instance (with executeQuery and sqlTypes).
  * @param {object} upload - The Multer instance for file uploads.
  * @returns {express.Router} - An Express router with the registration endpoint.
  */
+
+// Initialize Azure Blob Service
+const AZURE_STORAGE_CONNECTION_STRING =
+  process.env.AZURE_STORAGE_CONNECTION_STRING;
+const containerName = "visitor-photos"; // The container name in azure
+
+if (!AZURE_STORAGE_CONNECTION_STRING) {
+  console.error("Azure Storage Connection String is missing!");
+}
+
+const blobServiceClient = BlobServiceClient.fromConnectionString(
+  AZURE_STORAGE_CONNECTION_STRING,
+);
+const containerClient = blobServiceClient.getContainerClient(containerName);
+
 function createRegistrationRouter(dbService, upload) {
   const router = express.Router();
 
@@ -31,9 +45,30 @@ function createRegistrationRouter(dbService, upload) {
       additional_dependents,
     } = req.body;
 
-    const photo_path = req.file
-      ? `uploads/${path.basename(req.file.path)}`
-      : null;
+    let photo_path = null;
+    let blobName = null;
+
+    if (req.file) {
+      try {
+        // Create a unique name for the image in the cloud
+        blobName = `visitor-${Date.now()}${path.extname(req.file.originalname)}`;
+        const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+
+        // WE send the buffer the image in RAM to Azure
+        await blockBlobClient.uploadData(req.file.buffer, {
+          blobHTTPHeaders: { blobContentType: req.file.mimetype },
+        });
+
+        // This is the full URL to save in the SQL Database
+        photo_path = blockBlobClient.url;
+        console.log(" Photo uploaded to Azure:", photo_path);
+      } catch (uploadErr) {
+        console.error("Azure Upload Error:", uploadErr.message);
+        return res
+          .status(500)
+          .json({ error: "Failed to upload photo to cloud." });
+      }
+    }
 
     let transaction; // Initialize transaction variable
 
@@ -50,6 +85,9 @@ function createRegistrationRouter(dbService, upload) {
 
       // If a row is found, it means the visitor already exists.
       if (existingVisitor.length > 0) {
+        if (photo_path && blobName) {
+          await containerClient.getBlockBlobClient(blobName).deleteIfExists();
+        }
         const message = `A visitor named ${first_name} ${last_name} already exists. Please use the search bar to log them in.`;
         return res.status(409).json({ message });
       }
@@ -193,18 +231,10 @@ function createRegistrationRouter(dbService, upload) {
           console.error("Rollback failed:", rollbackError.message);
         }
       }
-
-      // Clean up uploaded file if registration failed
-      if (req.file && req.file.path) {
-        try {
-          fs.unlinkSync(req.file.path);
-          console.log(`Cleaned up uploaded file: ${req.file.path}`);
-        } catch (cleanupError) {
-          console.error(
-            "Failed to clean up uploaded file:",
-            cleanupError.message,
-          );
-        }
+      if (photo_path && blobName) {
+        const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+        await blockBlobClient.deleteIfExists();
+        console.log(" Cleaned up orphan blob after failed transaction.");
       }
 
       return res.status(500).json({
@@ -213,18 +243,6 @@ function createRegistrationRouter(dbService, upload) {
         detail: error.message,
       });
     }
-  });
-
-  // Centralized error handler for the router. Catches errors from multer.
-  router.use((err, req, res, next) => {
-    if (err instanceof multer.MulterError) {
-      // A Multer error occurred (e.g., file too large).
-      return res.status(400).json({ error: err.message });
-    } else if (err) {
-      // A custom error occurred
-      return res.status(400).json({ error: err.message });
-    }
-    next();
   });
 
   return router;
