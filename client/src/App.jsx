@@ -221,6 +221,7 @@ function App() {
     // Prepare edit form data
     setEditFormData({
       id: visitor.id,
+      photo: visitor.photo_path,
       known_as: visitor.known_as || "",
       address: visitor.address || "",
       phone_number: visitor.phone_number || "",

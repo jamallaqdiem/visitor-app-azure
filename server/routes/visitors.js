@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const express = require("express");
 const sql = require("mssql");
+const { BlobServiceClient } = require("@azure/storage-blob");
 
 /**
  * Creates and configures a router for fetching currently signed-in visitor data
@@ -10,6 +11,15 @@ const sql = require("mssql");
  * @param {object} dbService - The Azure SQL database service wrapper (e.g., with executeQuery).
  * @returns {express.Router} - An Express router with the visitor endpoints.
  */
+
+// 2. Initialize Azure blob
+const AZURE_STORAGE_CONNECTION_STRING =
+  process.env.AZURE_STORAGE_CONNECTION_STRING;
+const containerName = "visitor-photos";
+const blobServiceClient = BlobServiceClient.fromConnectionString(
+  AZURE_STORAGE_CONNECTION_STRING,
+);
+const containerClient = blobServiceClient.getContainerClient(containerName);
 function createVisitorsRouter(dbService) {
   const router = express.Router();
 
@@ -99,7 +109,7 @@ function createVisitorsRouter(dbService) {
       // 1. Get the photo path first so we know what to delete from disk later
       const getPhotoQuery = `SELECT photo_path FROM visitors WHERE id = ${visitorId}`;
       const photoResult = await dbService.executeQuery(getPhotoQuery);
-      const photoPath = photoResult?.recordset[0]?.photo_path;
+      const photoUrl = photoResult?.recordset[0]?.photo_path;
 
       // 2. Start the Database Deletion Chain
       // delete in this order: Dependents -> Visits -> Visitor
@@ -120,12 +130,20 @@ function createVisitorsRouter(dbService) {
         `DELETE FROM visitors WHERE id = ${visitorId}`,
       );
 
-      // 3. Delete the physical photo file from the 'uploads' folder
-      if (photoPath) {
-        const fullPath = path.join(__dirname, "..", photoPath);
-        if (fs.existsSync(fullPath)) {
-          fs.unlinkSync(fullPath);
-          console.log(`Successfully deleted photo: ${fullPath}`);
+      // Delete from Azure Blob Storage
+      if (photoUrl && photoUrl.includes("http")) {
+        try {
+          // Extract just the filename (like visitor-123.jpg) from the full URL
+          const blobName = path.basename(photoUrl);
+          const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+
+          await blockBlobClient.deleteIfExists();
+          console.log(` Successfully deleted cloud photo: ${blobName}`);
+        } catch (blobErr) {
+          console.error(
+            "Database deleted, but failed to remove Azure Blob:",
+            blobErr.message,
+          );
         }
       }
 

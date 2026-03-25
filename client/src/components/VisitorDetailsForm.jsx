@@ -88,6 +88,21 @@ const VisitorDetailsForm = ({
     "visitor",
     "professional",
   ].includes(editFormData.type);
+  // helper function to get the correct photo path.
+
+  const getImageUrl = (path) => {
+    if (!path) return "https://placehold.co/160x160/ccc/666?text=No+Photo";
+
+    // extract just the Azure part.
+    if (path.includes("https://folderphotos.blob.core.windows.net")) {
+      const azureIndex = path.indexOf(
+        "https://folderphotos.blob.core.windows.net",
+      );
+      return path.substring(azureIndex);
+    }
+    if (path.toLowerCase().startsWith("http")) return path;
+    return `${API_BASE_URL}/${path}`;
+  };
 
   const isAdultNotAcknowledged =
     isAgreementRequired && !isAgreementCheckedAdult;
@@ -113,15 +128,12 @@ const VisitorDetailsForm = ({
           <div className="flex flex-col items-center w-full mt-6">
             <div className="w-60 h-60 rounded-lg overflow-hidden bg-gray-200 flex items-center justify-center border-4 border-gray-300 shadow-inner">
               <img
-                src={
-                  selectedVisitor.photo
-                    ? selectedVisitor.photo
-                    : "https://placehold.co/160x160/ccc/666?text=No+Photo"
-                }
-                alt="Visitor Photo"
+                src={getImageUrl(
+                  selectedVisitor.photo_path || selectedVisitor.photo,
+                )}
+                alt="Visitor"
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  // Fallback if the URL itself is broken
                   e.target.onerror = null;
                   e.target.src =
                     "https://placehold.co/160x160/ccc/666?text=No+Photo";
