@@ -1,5 +1,6 @@
 import React from "react";
 import { SearchIcon, PersonIcon } from "./IconComponents";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 // Function to format time for display
 const formatTime = (timeString) => {
@@ -40,6 +41,22 @@ const VisitorsDashboard = ({
 }) => {
   const isError = messageType === "error" && message;
   const isSuccess = messageType === "success" && message;
+  // helper function to get the correct photo path.
+  const getImageUrl = (path) => {
+    if (!path) return "https://placehold.co/160x160/ccc/666?text=No+Photo";
+
+    if (path.includes("https://folderphotos.blob.core.windows.net")) {
+      const azureIndex = path.indexOf(
+        "https://folderphotos.blob.core.windows.net",
+      );
+      return path.substring(azureIndex);
+    }
+    if (path.toLowerCase().startsWith("http")) return path;
+
+    // Standardize slashes for local paths
+    const cleanPath = path.replace(/\\/g, "/");
+    return `${API_BASE_URL}/${cleanPath}`;
+  };
 
   return (
     <div className=" max-w-full mx-auto space-y-8">
@@ -85,42 +102,64 @@ const VisitorsDashboard = ({
         )}
 
         {/* Search Results (Visible after search is complete or typing has slowed) */}
-        {searchResults.length > 0 && (
-          <div className="mt-4 border-t pt-4">
-            <h3 className="text-xl font-semibold text-blue-800 mb-3">
-              Search Results ({searchResults.length})
-            </h3>
-            <div className="space-y-3">
-              {searchResults.map((visitor) => (
-                <div
-                  key={visitor.id}
-                  className={`flex justify-between items-center p-4 rounded-lg cursor-pointer transition-all ${
-                    visitor.is_banned === 1
-                      ? "bg-red-50 hover:bg-red-100 border border-red-300"
-                      : "bg-green-50 hover:bg-green-100 border border-green-300"
-                  }`}
-                  onClick={() => handleVisitorSelect(visitor)}
-                >
-                  <div className="flex items-center space-x-3">
-                    <PersonIcon className="h-6 w-6 text-blue-500" />
-                    <span className="font-medium text-gray-700">
-                      {visitor.first_name} {visitor.last_name}
-                      {visitor.is_banned === 1 ||
-                        (visitor.is_banned === true && (
-                          <span className="ml-2 text-sm font-bold text-red-600">
-                            (BANNED)
-                          </span>
-                        ))}
+        {searchResults.map((visitor) => (
+          <div
+            key={visitor.id}
+            className={`flex justify-between items-center p-4 rounded-lg cursor-pointer transition-all ${
+              visitor.is_banned === 1
+                ? "bg-red-50 hover:bg-red-100 border border-red-300"
+                : "bg-green-50 hover:bg-green-100 border border-green-300"
+            }`}
+            onClick={() => handleVisitorSelect(visitor)}
+          >
+            <div className="flex items-center space-x-4">
+              {/* 1. Visual Identity using your getImageUrl Helper */}
+              <div className="h-12 w-12 rounded-full overflow-hidden bg-gray-200 flex-shrink-0 border-2 border-white shadow-sm">
+                <img
+                  /*  Check both photo_path AND photo  */
+                  src={getImageUrl(visitor.photo_path || visitor.photo)}
+                  alt={`${visitor.first_name}`}
+                  className="h-full w-full object-cover"
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = "https://placehold.co/48x48/ccc/666?text=??";
+                  }}
+                />
+              </div>
+
+              {/* 2. Text Details */}
+              <div className="text-xs text-gray-500 italic">
+                <span className="font-bold text-gray-800 flex items-center">
+                  {visitor.first_name} {visitor.last_name}
+                  {visitor.is_banned === 1 && (
+                    <span className="ml-2 text-[10px] uppercase font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded border border-red-200">
+                      BANNED
                     </span>
-                  </div>
-                  <button className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors">
-                    Select
-                  </button>
-                </div>
-              ))}
+                  )}
+                </span>
+                {/*  Contractors & Professionals show Company */}
+                {["contractor", "professional"].includes(visitor.type) ? (
+                  <span>
+                    {visitor.company_name
+                      ? `Company: ${visitor.company_name}`
+                      : "No Company Listed"}
+                  </span>
+                ) : (
+                  /* Standard Guests show "Known As" */
+                  <span>
+                    {visitor.known_as
+                      ? `Known as: ${visitor.known_as}`
+                      : "No nickname recorded"}
+                  </span>
+                )}
+              </div>
             </div>
+
+            <button className="px-3 py-1.5 bg-white border border-blue-200 rounded text-xs font-bold text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm">
+              SELECT
+            </button>
           </div>
-        )}
+        ))}
 
         {/* If no results, prompt for registration */}
       </div>

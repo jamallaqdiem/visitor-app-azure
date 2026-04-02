@@ -470,7 +470,7 @@ function App() {
 
     try {
       const response = await fetch(
-        setP`${API_BASE_URL}/api/update-visitor-details`,
+        `${API_BASE_URL}/api/update-visitor-details`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

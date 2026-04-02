@@ -74,10 +74,11 @@ function createRegistrationRouter(dbService, upload) {
 
     try {
       // --- 1. CHECK FOR DUPLICATE VISITOR (SELECT) ---
-      const checkSql = `SELECT id FROM visitors WHERE first_name = @first_name AND last_name = @last_name`;
+      const checkSql = `SELECT id FROM visitors WHERE first_name = @first_name AND last_name = @last_name AND photo_path = @photo_path`;
       const checkParams = [
         { name: "first_name", type: sql.NVarChar(255), value: first_name },
         { name: "last_name", type: sql.NVarChar(255), value: last_name },
+        { name: "photo_path", type: sql.NVarChar(2048), value: photo_path },
       ];
 
       const results = await dbService.executeQuery(checkSql, checkParams);
