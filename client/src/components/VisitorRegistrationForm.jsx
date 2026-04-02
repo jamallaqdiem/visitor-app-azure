@@ -55,7 +55,7 @@ const VisitorRegistrationForm = ({
     }
     return new File([u8arr], filename, { type: mime });
   };
-  
+
   //handle the actual file selection for "Upload File"
   const handleFileClick = () => {
     setCaptureMode(null);
@@ -223,9 +223,15 @@ const VisitorRegistrationForm = ({
           <div className="md:col-span-1 flex flex-col items-center space-y-3">
             {" "}
             <label className="text-sm font-medium text-gray-700">
-              Visitor PhotoID
+              Visitor PhotoID <span className="text-red-500 font-bold">*</span>
             </label>
-            <div className="w-32 h-32 rounded-lg overflow-hidden bg-gray-200 flex items-center justify-center border-2 border-gray-300 shadow-inner">
+            <div
+              className={`w-32 h-32 rounded-lg overflow-hidden bg-gray-200 flex items-center justify-center border-2 shadow-inner transition-colors ${
+                !photoPreviewUrl && !capturedImage
+                  ? "border-orange-400"
+                  : "border-gray-300"
+              }`}
+            >
               {capturedImage || photoPreviewUrl ? (
                 <img
                   src={capturedImage || photoPreviewUrl}
@@ -302,7 +308,7 @@ const VisitorRegistrationForm = ({
                           }_${Date.now()}.jpeg`;
                           const webcamFile = dataURLtoFile(
                             capturedImage,
-                            filename
+                            filename,
                           );
                           // Creating a synthetic event object to pass the File to handlePhotoChange
                           const syntheticEvent = {
@@ -342,8 +348,7 @@ const VisitorRegistrationForm = ({
                   </button>
                 </div>
               </div>
-            )}
-               {" "}
+            )}{" "}
           </div>
           {/* Additional Dependents */}
           {["visitor"].includes(formData.visitorType) && (
@@ -402,8 +407,8 @@ const VisitorRegistrationForm = ({
               messageType === "error"
                 ? "bg-red-100 text-red-700 border-red-300"
                 : messageType === "success"
-                ? "bg-green-100 text-green-700 border-green-300"
-                : "bg-blue-100 text-blue-700 border-blue-300"
+                  ? "bg-green-100 text-green-700 border-green-300"
+                  : "bg-blue-100 text-blue-700 border-blue-300"
             } border`}
           >
             {message}
@@ -468,8 +473,9 @@ const VisitorRegistrationForm = ({
             className="px-8 py-3 font-bold rounded-lg transition-all shadow-xl bg-green-600 text-white hover:bg-green-700 disabled:opacity-60"
             disabled={
               loadingRegistration ||
-              !formData.firstName ||
-              !formData.lastName ||
+              !formData.firstName?.trim() ||
+              !formData.lastName?.trim() ||
+              (!capturedImage && !photoPreviewUrl) ||
               !isAgreementCheckedAdult ||
               (dependents.length > 0 && !isAgreementCheckedChild)
             }

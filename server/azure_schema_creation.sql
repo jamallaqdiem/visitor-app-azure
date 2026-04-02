@@ -15,7 +15,7 @@ CREATE TABLE visitors (
     last_name NVARCHAR(255) NOT NULL,
     
     -- Security / Access Control
-    photo_path NVARCHAR(500) NULL, -- Path to the stored image file
+    photo_path NVARCHAR(500) NOT NULL, -- Path to the stored image file
     is_banned BIT NOT NULL DEFAULT 0, -- 0 = Not Banned, 1 = Banned
     
     -- Metadata 
@@ -43,7 +43,7 @@ CREATE TABLE visits (
     known_as NVARCHAR(255) NULL,
     address NVARCHAR(500) NULL,
     phone_number NVARCHAR(50) NULL,
-    unit NVARCHAR(50) NOT NULL,
+    unit NVARCHAR(50)  NULL,
     reason_for_visit NVARCHAR(500) NULL,
     type NVARCHAR(50) NOT NULL, -- e.g., 'Guest', 'Contractor'
     company_name NVARCHAR(255) NULL, 
@@ -94,11 +94,19 @@ CREATE TABLE audit_logs (
 );
 GO
 
--- 5. Create Indexes for performance
-CREATE NONCLUSTERED INDEX IX_visits_OnSite ON visits (exit_time) INCLUDE (visitor_id, entry_time);
-CREATE UNIQUE NONCLUSTERED INDEX IX_visitors_FullName ON visitors (first_name, last_name);
+--  Help the "Who is On Site" table load fast
+CREATE NONCLUSTERED INDEX IX_visits_OnSite 
+ON visits (exit_time) 
+INCLUDE (visitor_id, entry_time);
 GO
--- not allow duplicates
+
+-- Allow same names only if photo is different
+CREATE UNIQUE INDEX IX_visitors_NamePhoto 
+ON dbo.visitors (first_name, last_name, photo_path);
+GO
+
+--  Stop a person from signing in twice at the same time
 CREATE UNIQUE INDEX UIX_ActiveVisits 
-ON visits (visitor_id) 
+ON dbo.visits (visitor_id) 
 WHERE exit_time IS NULL;
+GO
