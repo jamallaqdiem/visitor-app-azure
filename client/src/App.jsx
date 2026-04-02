@@ -129,7 +129,9 @@ function App() {
   // --- API: Fetch Currently Signed-In Visitors ---
   const fetchVisitors = useCallback(async () => {
     // Only show loading indicator initially or when explicitly triggered
-    setIsLoading(true);
+    if (visitors.length === 0) {
+      setIsLoading(true);
+    }
     setError(null);
     try {
       const response = await fetch(`${API_BASE_URL}/api/visitors`);
@@ -140,20 +142,20 @@ function App() {
       setVisitors(data);
     } catch (err) {
       console.error("Error fetching visitors:", err);
-      setError("Failed to load active visitors.");
-      setVisitors([]);
+      // 💡 Keep the 'visitors' data on screen so it doesn't go blank!
+      setError("Connection lost. Retrying...");
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [visitors.length]);
 
-  // EFFECT: Auto-refresh "Who is On Site" table every 5 seconds
+  // EFFECT: Auto-refresh "Who is On Site" table every 20 seconds
   useEffect(() => {
     // Fetch immediately on mount
     fetchVisitors();
 
     // Set up interval for refreshing every 5000ms
-    const intervalId = setInterval(fetchVisitors, 5000);
+    const intervalId = setInterval(fetchVisitors, 20000);
 
     // Clean up interval on unmount
     return () => clearInterval(intervalId);
@@ -212,7 +214,7 @@ function App() {
     // Set a new timeout
     debounceTimeoutRef.current = setTimeout(() => {
       handleVisitorSearch(term);
-    }, 600);
+    }, 1000);
   });
 
   // --- Visitor Selection Handler ---
