@@ -31,6 +31,7 @@ function createRegistrationRouter(dbService, upload) {
 
   // Handle visitor registration - now async to use await with the dbService
   router.post("/register-visitor", upload.single("photo"), async (req, res) => {
+    const siteId = req.siteId;
     const {
       first_name,
       last_name,
@@ -107,8 +108,8 @@ function createRegistrationRouter(dbService, upload) {
 
       // --- 3. INSERT INTO visitors TABLE ---
       const visitorSql = `
-                INSERT INTO visitors (first_name, last_name, photo_path) 
-                VALUES (@first_name, @last_name, @photo_path);
+                INSERT INTO visitors (first_name, last_name, photo_path, site_id) 
+                VALUES (@first_name, @last_name, @photo_path, @site_id);
                 SELECT @visitorId = SCOPE_IDENTITY();
             `;
 
@@ -116,6 +117,7 @@ function createRegistrationRouter(dbService, upload) {
       request.input("first_name", sql.NVarChar(255), first_name);
       request.input("last_name", sql.NVarChar(255), last_name);
       request.input("photo_path", sql.NVarChar(500), photo_path);
+      request.input("site_id", sql.Int, siteId);
 
       // Define an output parameter to capture the ID
       request.output("visitorId", sql.Int);
@@ -131,19 +133,19 @@ function createRegistrationRouter(dbService, upload) {
       // --- 4. INSERT INTO visits TABLE ---
       const visitsSql = `
                 INSERT INTO visits (
-                    visitor_id, entry_time, known_as, address, phone_number, unit, reason_for_visit, type, company_name, mandatory_acknowledgment_taken
+                    visitor_id, site_id, entry_time, known_as, address, phone_number, unit, reason_for_visit, type, company_name, mandatory_acknowledgment_taken
                 ) VALUES (
-                    @visitor_id, @entry_time, @known_as, @address, @phone_number, @unit, @reason_for_visit, @type, @company_name, @mandatory_acknowledgment_taken
+                    @visitor_id, @site_id, @entry_time, @known_as, @address, @phone_number, @unit, @reason_for_visit, @type, @company_name, @mandatory_acknowledgment_taken
                 );
                 SELECT @visitId = SCOPE_IDENTITY();
             `;
-
       // Reset the request inputs and outputs for the visits query
       const visitRequest = new sql.Request(transaction);
 
       const entry_time = new Date().toISOString(); // Use JS ISO string format for DATETIMEOFFSET
 
       visitRequest.input("visitor_id", sql.Int, visitorId);
+      visitRequest.input("site_id", sql.Int, siteId);
       visitRequest.input("entry_time", sql.DateTimeOffset, entry_time);
       visitRequest.input("known_as", sql.NVarChar(255), known_as);
       visitRequest.input("address", sql.NVarChar(500), address);
