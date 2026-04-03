@@ -11,6 +11,7 @@ CREATE TABLE visitors (
     id INT IDENTITY(1,1) PRIMARY KEY,
 
     -- Core Identification 
+    site_id INT NOT NULL,
     first_name NVARCHAR(255) NOT NULL,
     last_name NVARCHAR(255) NOT NULL,
     
@@ -36,6 +37,7 @@ CREATE TABLE visits (
     visitor_id INT NOT NULL,
 
     -- Visit Details 
+    site_id INT NOT NULL,
     entry_time DATETIMEOFFSET NOT NULL,
     exit_time DATETIMEOFFSET NULL, -- NULL until the visitor signs out
     
@@ -85,6 +87,7 @@ CREATE TABLE audit_logs (
     id INT IDENTITY(1,1) PRIMARY KEY,
 
     -- Log Details 
+    site_id INT NOT NULL,
     event_name NVARCHAR(255) NOT NULL,
     timestamp DATETIMEOFFSET NOT NULL DEFAULT GETUTCDATE(),
     status NVARCHAR(50) NOT NULL,
@@ -96,7 +99,7 @@ GO
 
 --  Help the "Who is On Site" table load fast
 CREATE NONCLUSTERED INDEX IX_visits_OnSite 
-ON visits (exit_time) 
+ON visits (site_id, exit_time)
 INCLUDE (visitor_id, entry_time);
 GO
 
@@ -107,6 +110,12 @@ GO
 
 --  Stop a person from signing in twice at the same time
 CREATE UNIQUE INDEX UIX_ActiveVisits 
-ON dbo.visits (visitor_id) 
+ON dbo.visits (visitor_id, site_id)
+WHERE exit_time IS NULL;
+GO
+
+-- Allow one active visit PER PERSON PER SITE.
+CREATE UNIQUE INDEX UIX_ActiveVisits 
+ON dbo.visits (visitor_id, site_id) 
 WHERE exit_time IS NULL;
 GO
