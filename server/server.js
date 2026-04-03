@@ -25,6 +25,25 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+const siteHandler = (req, res, next) => {
+  // 1. Look into the headers for 'x-site-id'
+  const siteId = req.headers["x-site-id"];
+
+  // 2. Validate: If it's missing, stop the request
+  if (!siteId) {
+    console.error("Security Alert: Request blocked. Missing x-site-id header.");
+    return res.status(400).json({
+      error: "Building Identification Required. Access Denied.",
+    });
+  }
+
+  // 3. Attach it to the 'req' object so routes can see it later
+  req.siteId = parseInt(siteId, 10);
+
+  // 4. This tells Express to move to the next function/router
+  next();
+};
+
 // Keep the file in the RAM
 const storage = multer.memoryStorage();
 
@@ -67,6 +86,9 @@ dbService
       error,
     );
   });
+
+// This tells Express that every request that goes to /api must pass through siteHandler first.
+app.use("/api", siteHandler);
 
 // Router usage
 app.use("/api", createRegistrationRouter(dbService, upload));
