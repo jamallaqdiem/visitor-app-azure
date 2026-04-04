@@ -50,6 +50,7 @@ async function runDataComplianceCleanup(dbService, callback) {
     const auditParams = {
       eventName: auditEvent,
       status: auditStatus,
+      siteId: 0,
       profilesDeleted: deletedCounts.profiles,
       visitsDeleted: deletedCounts.visits,
       dependentsDeleted: deletedCounts.dependents,
