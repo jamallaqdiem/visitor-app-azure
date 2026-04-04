@@ -14,6 +14,7 @@ function createBanVisitorRouter(dbService) {
   router.post("/ban-visitor/:id", async (req, res) => {
     // Visitor ID is passed as a route parameter
     const visitorId = req.params.id;
+    const siteId = req.siteId;
 
     if (!visitorId || isNaN(parseInt(visitorId, 10))) {
       return res
@@ -39,6 +40,12 @@ function createBanVisitorRouter(dbService) {
       if (result.rowsAffected && result.rowsAffected[0] === 0) {
         return res.status(404).json({ message: "Visitor not found." });
       }
+
+      await dbService.logAudit({
+        eventName: "VISITOR_BANNED",
+        status: "SUCCESS",
+        siteId: siteId,
+      });
 
       // If one row was affected, the ban was successful
       res

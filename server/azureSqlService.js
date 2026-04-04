@@ -125,17 +125,19 @@ async function executeQuery(querySql, params = [], retries = 3) {
 async function logAudit({
   eventName,
   status,
+  siteId,
   profilesDeleted = 0,
   visitsDeleted = 0,
   dependentsDeleted = 0,
 }) {
   const query = `
-        INSERT INTO audit_logs (event_name, timestamp, status, profiles_deleted, visits_deleted, dependents_deleted)
-        VALUES (@eventName, GETUTCDATE(), @status, @profilesDeleted, @visitsDeleted, @dependentsDeleted);
+        INSERT INTO audit_logs (event_name, timestamp, status, site_id, profiles_deleted, visits_deleted, dependents_deleted)
+        VALUES (@eventName, GETUTCDATE(), @status, @siteId, @profilesDeleted, @visitsDeleted, @dependentsDeleted);
     `;
   const params = [
     { name: "eventName", type: sql.NVarChar(255), value: eventName },
     { name: "status", type: sql.NVarChar(50), value: status },
+    { name: "siteId", type: sql.Int, value: siteId },
     { name: "profilesDeleted", type: sql.Int, value: profilesDeleted },
     { name: "visitsDeleted", type: sql.Int, value: visitsDeleted },
     { name: "dependentsDeleted", type: sql.Int, value: dependentsDeleted },
