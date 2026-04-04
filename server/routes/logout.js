@@ -14,7 +14,7 @@ function createLogoutRouter(dbService) {
   router.post("/exit-visitor/:id", async (req, res) => {
     // The visitor ID is passed as a route parameter
     const visitorId = req.params.id;
-    const exit_time = new Date().toISOString();
+    const siteId = req.siteId;
 
     try {
       // Use the new DateTimeOffset type for Azure compatibility
@@ -28,12 +28,13 @@ function createLogoutRouter(dbService) {
           T2.last_name 
         FROM visits T1 
         JOIN visitors T2 ON T1.visitor_id = T2.id 
-        WHERE T1.visitor_id = @visitorId AND T1.exit_time IS NULL 
+        WHERE T1.visitor_id = @visitorId AND T1.exit_time IS NULL AND T1.site_id = @siteId
         ORDER BY T1.entry_time DESC
       `;
 
       const findInputs = [
         { name: "visitorId", type: sql.Int, value: visitorId },
+        { name: "siteId", type: sql.Int, value: siteId },
       ];
       const result = await dbService.executeQuery(findSql, findInputs);
 
@@ -50,11 +51,13 @@ function createLogoutRouter(dbService) {
         UPDATE visits 
         SET exit_time = @exitTime 
         WHERE id = @visitId
+        AND site_id = @siteId
       `;
 
       const updateInputs = [
         { name: "exitTime", type: sql.DateTimeOffset, value: exit_time },
         { name: "visitId", type: sql.Int, value: activeVisit.visit_id },
+        { name: "siteId", type: sql.Int, value: siteId },
       ];
 
       await dbService.executeQuery(updateSql, updateInputs);
