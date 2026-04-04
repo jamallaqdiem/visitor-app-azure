@@ -13,6 +13,7 @@ function createSearchVisitorsRouter(dbService) {
   // Endpoint to search for visitors by name
   router.get("/visitor-search", async (req, res) => {
     const searchTerm = req.query.name;
+    const siteId = req.siteId;
     if (!searchTerm) {
       return res
         .status(400)
@@ -30,7 +31,7 @@ function createSearchVisitorsRouter(dbService) {
     }
 
     let whereClauses = [];
-    let inputs = [];
+    let inputs = [{ name: "siteId", type: sql.Int, value: siteId }];
 
     // Dynamically build conditions for each search term
     searchTerms.forEach((_, index) => {
@@ -50,7 +51,7 @@ function createSearchVisitorsRouter(dbService) {
 
     const whereClause = "WHERE " + whereClauses.join(" AND ");
 
-    // 2. Construct the main T-SQL query
+    // 2. Construct the main T-SQL query apply site_id
     const query = `
       SELECT
         T1.id,
@@ -79,11 +80,12 @@ function createSearchVisitorsRouter(dbService) {
         SELECT TOP 1 
             id, known_as, address, phone_number, unit, reason_for_visit, company_name, type, mandatory_acknowledgment_taken
         FROM visits
-        WHERE visitor_id = T1.id
+        WHERE visitor_id = T1.id 
+          AND site_id = @siteId -- Only show last visit details for this specific  site
         ORDER BY entry_time DESC
       ) AS T2
       ${whereClause}
-      ORDER BY T1.id -- Order results consistently
+      ORDER BY T1.id
     `;
 
     try {
