@@ -6,7 +6,7 @@
  */
 function createLoginRouter(dbService) {
   const router = require("express").Router();
-
+  const sql = dbService.sqlTypes;
   // Endpoint for an existing visitor to log in
   router.post("/login", async (req, res) => {
     const { id } = req.body;
@@ -158,9 +158,7 @@ function createLoginRouter(dbService) {
         {
           name: "mandatoryTaken",
           type: sql.Bit,
-          value: lastVisitDetails.mandatory_acknowledgment_taken
-            ? "true"
-            : "false",
+          value: lastVisitDetails.mandatory_acknowledgment_taken ? 1 : 0,
         },
       ];
 
