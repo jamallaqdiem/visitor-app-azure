@@ -9,6 +9,8 @@ import TutorialModal from "./components/TutorialModal";
 import ContractorHandoverModal from "./components/ContractorHandoverModal";
 import { HelpCircle } from "lucide-react";
 const API_BASE_URL = import.meta.env.VITE_API_URL;
+const queryParams = new URLSearchParams(window.location.search);
+const SITE_ID = queryParams.get("site");
 
 // Initial state for the registration form
 const initialRegistrationForm = {
@@ -60,8 +62,6 @@ function App() {
 
   // --- Visitor Details/Update Form State ---
   const [editFormData, setEditFormData] = useState({});
-  const [isDetailsAgreementChecked, setIsDetailsAgreementChecked] =
-    useState(false);
 
   // --- Notification State (Global for forms and dashboard) ---
   const [message, setMessage] = useState("");
@@ -85,6 +85,27 @@ function App() {
   // --- Record Missed Visit Modal State ---
   const [showMissedVisitModal, setShowMissedVisitModal] = useState(false);
   const [missedEntryTime, setMissedEntryTime] = useState("");
+
+  const getAuthHeaders = (isFormData = false) => {
+    //  we use your hardcoded SITE_ID or URL param
+    // Later, we use pull 'atlasToken' from local storage or Atlas login
+    const token = localStorage.getItem("atlas_token");
+
+    const headers = {
+      "x-site-id": SITE_ID, // Your backend still needs this for the SQL query
+    };
+
+    // If  requires a Token, we add it here
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    if (!isFormData) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    return headers;
+  };
 
   // Debounce for live search
   const debounceTimeoutRef = useRef(null);
@@ -134,7 +155,12 @@ function App() {
     }
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/visitors`);
+      // adding the header.
+      const response = await fetch(`${API_BASE_URL}/api/visitors`, {
+        method: "GET",
+        headers: getAuthHeaders(),
+      });
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -151,15 +177,21 @@ function App() {
 
   // EFFECT: Auto-refresh "Who is On Site" table every 20 seconds
   useEffect(() => {
-    // Fetch immediately on mount
-    fetchVisitors();
+    if (!showHistory && !showRegistration && !selectedVisitor) {
+      fetchVisitors();
+    }
 
     // Set up interval for refreshing every 5000ms
-    const intervalId = setInterval(fetchVisitors, 20000);
+    const intervalId = setInterval(() => {
+      // Only refresh if we aren't currently looking at History or Registration
+      if (!showHistory && !showRegistration && !selectedVisitor) {
+        fetchVisitors();
+      }
+    }, 20000);
 
     // Clean up interval on unmount
     return () => clearInterval(intervalId);
-  }, [fetchVisitors]);
+  }, [fetchVisitors, showHistory, showRegistration, selectedVisitor]);
 
   // --- API: Visitor Search (Live Search with Debounce) ---
   const handleVisitorSearch = useCallback(async (term) => {
@@ -176,10 +208,14 @@ function App() {
     setIsLoading(true);
 
     try {
+      //add the header
       const encodedSearchTerm = encodeURIComponent(trimmedTerm);
       const url = `${API_BASE_URL}/api/visitor-search?name=${encodedSearchTerm}`;
 
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        method: "GET",
+        headers: getAuthHeaders(),
+      });
       const data = await response.json();
 
       if (!response.ok) {
@@ -270,10 +306,42 @@ function App() {
 
   const handlePhotoChange = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      setRegFormData((prev) => ({ ...prev, photo: file }));
-      setPhotoPreviewUrl(URL.createObjectURL(file));
+    if (!file) return;
+
+    // 1. Define strictly allowed types (No .webp, .pdf, etc.)
+    const allowedTypes = ["image/jpeg", "image/png", "image/gif"];
+
+    // 2.  size limit 10MB
+    const MAX_SIZE = 10 * 1024 * 1024;
+
+    // Check Type
+    if (!allowedTypes.includes(file.type)) {
+      showNotification(
+        "Unsupported format! Please use JPG, PNG, or GIF.",
+        "error",
+      );
+      e.target.value = ""; // Reset the input field
+      setPhotoPreviewUrl(null);
+      return;
     }
+
+    // Check Size
+    if (file.size > MAX_SIZE) {
+      showNotification(
+        "This photo is too large (Max 10MB). Please take a smaller photo.",
+        "error",
+      );
+      e.target.value = "";
+      setPhotoPreviewUrl(null);
+      return;
+    }
+
+    setRegFormData((prev) => ({ ...prev, photo: file }));
+
+    // Clean up old object URLs to prevent memory leaks
+    if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+
+    setPhotoPreviewUrl(URL.createObjectURL(file));
   };
 
   const handleAddDependent = () => {
@@ -331,6 +399,7 @@ function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/register-visitor`, {
         method: "POST",
+        headers: getAuthHeaders(true),
         body: formData,
       });
 
@@ -389,7 +458,7 @@ function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ id }),
       });
 
@@ -475,7 +544,7 @@ function App() {
         `${API_BASE_URL}/api/update-visitor-details`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getAuthHeaders(),
           body: JSON.stringify(dataToSend),
         },
       );
@@ -506,7 +575,7 @@ function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/ban-visitor/${id}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
       });
 
       const result = await response.json();
@@ -576,7 +645,7 @@ function App() {
           `${API_BASE_URL}/api/unban-visitor/${currentId}`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: getAuthHeaders(),
             body: JSON.stringify({ password }),
           },
         );
@@ -603,7 +672,7 @@ function App() {
       try {
         const response = await fetch(`${API_BASE_URL}/api/authorize-history`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getAuthHeaders(),
           body: JSON.stringify({ password }),
         });
         const result = await response.json();
@@ -634,7 +703,7 @@ function App() {
           `${API_BASE_URL}/api/visitors/${currentId}`,
           {
             method: "DELETE",
-            headers: { "Content-Type": "application/json" },
+            headers: getAuthHeaders(),
             body: JSON.stringify({ password: password }),
           },
         );
@@ -704,7 +773,7 @@ function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/record-missed-visit`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           visitorId,
           pastEntryTime: new Date(missedEntryTime).toISOString(),
@@ -751,7 +820,7 @@ function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/exit-visitor/${id}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
       });
 
       const result = await response.json();
@@ -797,10 +866,13 @@ function App() {
     try {
       const url = new URL(`${API_BASE_URL}/api/history`);
       if (query) url.searchParams.append("query", query);
-      if (start) url.searchParams.append("endDate", start);
+      if (start) url.searchParams.append("startDate", start);
       if (end) url.searchParams.append("endDate", end);
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        headers: getAuthHeaders(),
+      });
 
       if (!response.ok) {
         const errorData = await response.json();
