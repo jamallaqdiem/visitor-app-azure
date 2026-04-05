@@ -15,6 +15,7 @@ function createMissedVisitRouter(dbService) {
   router.post("/record-missed-visit", async (req, res) => {
     // 1. Extract and validate data
     const { visitorId, pastEntryTime } = req.body;
+    const siteId = req.siteId;
     if (!visitorId || !pastEntryTime) {
       return res
         .status(400)
@@ -45,17 +46,18 @@ function createMissedVisitRouter(dbService) {
     const entry_time_iso = entryDate.toISOString();
 
     try {
-      // 3. Step 1: Finding the details of the visitor's most recent visit.
+      // 3. Step 1: Finding the details of the visitor's most recent visit from this site
       const selectSql = `
                 SELECT TOP 1
                     known_as, address, phone_number, unit, reason_for_visit, type, company_name, mandatory_acknowledgment_taken
                 FROM visits
-                WHERE visitor_id = @visitorId
+                WHERE visitor_id = @visitorId AND site_id = @siteId -- 👈 Site Isolation
                 ORDER BY entry_time DESC
             `;
 
       const selectInputs = [
         { name: "visitorId", type: sql.Int, value: visitorId },
+        { name: "siteId", type: sql.Int, value: siteId },
       ];
 
       const result = await dbService.executeQuery(selectSql, selectInputs);
@@ -72,20 +74,19 @@ function createMissedVisitRouter(dbService) {
       const reasonForVisit = visitDetails.reason_for_visit || null;
       const type = visitDetails.type || "Visitor";
       const companyName = visitDetails.company_name || null;
-      const mandatoryTaken = visitDetails.mandatory_acknowledgment_taken
-        ? "true"
-        : "false";
+      const mandatoryTaken = lastVisit.mandatory_acknowledgment_taken ? 1 : 0;
 
-      // 4. Step 2: Insert the new historical record
+      // 4. Step 2: Insert the new historical record include site_id
       const insertSql = `
                 INSERT INTO visits (
-                    visitor_id, entry_time, exit_time, known_as, address, phone_number, unit, reason_for_visit, type, company_name, mandatory_acknowledgment_taken
+                    visitor_id, site_id, entry_time, exit_time, known_as, address, phone_number, unit, reason_for_visit, type, company_name, mandatory_acknowledgment_taken
                 )
-                VALUES (@visitorId, @entryTime, @exitTime, @knownAs, @address, @phoneNumber, @unit, @reasonForVisit, @type, @companyName, @mandatoryTaken)
+                VALUES (@visitorId, @siteId, @entryTime, @exitTime, @knownAs, @address, @phoneNumber, @unit, @reasonForVisit, @type, @companyName, @mandatoryTaken)
             `;
 
       const insertInputs = [
         { name: "visitorId", type: sql.Int, value: visitorId },
+        { name: "siteId", type: sql.Int, value: siteId },
         { name: "entryTime", type: sql.NVarChar, value: entry_time_iso },
         { name: "exitTime", type: sql.NVarChar, value: currentExitTime },
         { name: "knownAs", type: sql.NVarChar, value: knownAs },
@@ -97,7 +98,7 @@ function createMissedVisitRouter(dbService) {
         { name: "companyName", type: sql.NVarChar, value: companyName },
         {
           name: "mandatoryTaken",
-          type: sql.NVarChar,
+          type: sql.Bit,
           value: mandatoryTaken,
         },
       ];

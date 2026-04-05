@@ -25,7 +25,7 @@ function createUpdateVisitorRouter(dbService) {
       mandatory_acknowledgment_taken,
       additional_dependents,
     } = req.body;
-
+    const siteId = req.siteId;
     if (!id) return res.status(400).json({ message: "Visitor ID required." });
 
     let dependentsArray = Array.isArray(additional_dependents)
@@ -44,18 +44,17 @@ function createUpdateVisitorRouter(dbService) {
         return res.status(404).json({ message: "Visitor ID not found." });
       }
 
-      // 2. USING OUTPUT INSERTED.id
+      // 2. USING OUTPUT INSERTED.id it include site_id
       const entry_time = new Date().toISOString();
       const visitsSql = `BEGIN TRANSACTION;
         BEGIN TRY
-          -- 1. Insert Visit and Get ID
           INSERT INTO visits (
-            visitor_id, entry_time, known_as, address, phone_number, unit, 
+            visitor_id, site_id, entry_time, known_as, address, phone_number, unit, 
             reason_for_visit, type, company_name, mandatory_acknowledgment_taken
           ) 
           OUTPUT INSERTED.id AS newVisitId
           VALUES (
-            @id, @entryTime, @knownAs, @address, @phoneNumber, @unit, 
+            @id, @siteId, @entryTime, @knownAs, @address, @phoneNumber, @unit, 
             @reasonForVisit, @type, @companyName, @mandatoryTaken
           );
           
@@ -68,6 +67,7 @@ function createUpdateVisitorRouter(dbService) {
       `;
       const visitInputs = [
         { name: "id", type: sql.Int, value: id },
+        { name: "siteId", type: sql.Int, value: siteId },
         { name: "entryTime", type: sql.DateTimeOffset, value: entry_time },
         { name: "knownAs", type: sql.NVarChar, value: known_as || null },
         { name: "address", type: sql.NVarChar, value: address || null },
@@ -90,8 +90,8 @@ function createUpdateVisitorRouter(dbService) {
         },
         {
           name: "mandatoryTaken",
-          type: sql.NVarChar,
-          value: mandatory_acknowledgment_taken ? "true" : "false",
+          type: sql.Bit,
+          value: mandatory_acknowledgment_taken ? 1 : 0,
         },
       ];
 

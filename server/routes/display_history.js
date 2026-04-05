@@ -27,10 +27,11 @@ function createHistoryRouter(dbService) {
 
   // Endpoint to get all historical visits with optional filtering
   router.get("/history", async (req, res) => {
+    const siteId = req.siteId;
     const { search, start_date, end_date } = req.query;
 
-    let whereClauses = [];
-    let inputs = [];
+    let whereClauses = ["T2.site_id = @siteId"];
+    let inputs = [{ name: "siteId", type: sql.Int, value: siteId }];
 
     // 1. Build dynamic WHERE clauses and input parameters
 
@@ -70,6 +71,7 @@ function createHistoryRouter(dbService) {
             T1.photo_path,
             T1.is_banned,
             T2.id AS visit_id,
+            T2.site_id,
             T2.known_as,
             T2.entry_time,
             T2.exit_time,
@@ -120,13 +122,7 @@ function createHistoryRouter(dbService) {
 
         return {
           ...row,
-          // Construct the full photo URL for the client
-          photo: row.photo_path
-            ? `${req.protocol}://${req.get("host")}/${row.photo_path}`
-            : null,
           dependents: dependents,
-          // Remove internal/raw fields from final output
-          photo_path: undefined,
           additional_dependents_json: undefined,
         };
       });

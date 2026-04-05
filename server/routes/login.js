@@ -6,23 +6,24 @@
  */
 function createLoginRouter(dbService) {
   const router = require("express").Router();
-
+  const sql = dbService.sqlTypes;
   // Endpoint for an existing visitor to log in
   router.post("/login", async (req, res) => {
     const { id } = req.body;
+    const siteId = req.siteId; // get sit id from middleware
     const entry_time = new Date().toISOString();
 
     if (!id)
       return res.status(400).json({ message: "Visitor ID is required." });
 
     try {
-      // 1. Find visitor status and last visit data
+      // 1. Find visitor status and last visit data on this building
       const findVisitorSql = `
                 SELECT
                     v.id AS visitor_id,
                     v.is_banned,
-                    -- Check if they are already signed in
-                    (SELECT COUNT(*) FROM visits WHERE visitor_id = v.id AND exit_time IS NULL) AS active_visits,
+                    -- Isolation: Check if they are already signed in at this specific building
+                    (SELECT COUNT(*) FROM visits WHERE visitor_id = v.id AND exit_time IS NULL AND site_id = @siteId) AS active_visits,
                     (
                         SELECT TOP 1 
                             T2.known_as, 
@@ -42,9 +43,9 @@ function createLoginRouter(dbService) {
                 FROM visitors AS v
                 WHERE v.id = @id;
             `;
-
       const visitorResult = await dbService.executeQuery(findVisitorSql, [
         { name: "id", type: dbService.sqlTypes.Int, value: id },
+        { name: "siteId", type: sql.Int, value: siteId },
       ]);
 
       //  Check recordset
@@ -93,14 +94,14 @@ function createLoginRouter(dbService) {
         dependentsData = depResult.recordset; // This is now an array of dependents
       }
 
-      // 3. Insert New Visit and Dependents in a SINGLE BATCH
+      // 3. Insert New Visit and Dependents in a SINGLE BATCH with site_id
       const loginBatchSql = `
         BEGIN TRANSACTION;
         BEGIN TRY
-          -- Insert Visit
-          INSERT INTO visits (visitor_id, entry_time, known_as, address, phone_number, unit, reason_for_visit, type, company_name, mandatory_acknowledgment_taken)
+          -- Insert Visit with Site ID
+          INSERT INTO visits (visitor_id, site_id, entry_time, known_as, address, phone_number, unit, reason_for_visit, type, company_name, mandatory_acknowledgment_taken)
           OUTPUT INSERTED.id AS newVisitId
-          VALUES (@visitor_id, @entry_time, @known_as, @address, @phone_number, @unit, @reason_for_visit, @type, @company_name, @mandatoryTaken);
+          VALUES (@visitor_id, @site_id, @entry_time, @known_as, @address, @phone_number, @unit, @reason_for_visit, @type, @company_name, @mandatoryTaken);
           
           COMMIT TRANSACTION;
         END TRY
@@ -112,6 +113,8 @@ function createLoginRouter(dbService) {
 
       const loginInputs = [
         { name: "visitor_id", type: dbService.sqlTypes.Int, value: id },
+
+        { name: "site_id", type: sql.Int, value: siteId },
         {
           name: "entry_time",
           type: dbService.sqlTypes.DateTimeOffset,
@@ -154,10 +157,8 @@ function createLoginRouter(dbService) {
         },
         {
           name: "mandatoryTaken",
-          type: dbService.sqlTypes.NVarChar,
-          value: lastVisitDetails.mandatory_acknowledgment_taken
-            ? "true"
-            : "false",
+          type: sql.Bit,
+          value: lastVisitDetails.mandatory_acknowledgment_taken ? 1 : 0,
         },
       ];
 
