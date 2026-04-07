@@ -47,6 +47,12 @@ const steps = [
       "To view past records, click the 'View Historical Data' button at the top right. NOTE: This area is password protected. You will need the management password to access the visitors database for reports or audits.",
     color: "bg-slate-100 border-slate-500",
   },
+  {
+    title: "Step 8: Permanent Data Deletion",
+    description:
+      "If a visitor profile must be removed for GDPR or legal reasons, use the 'Delete Profile' button. WARNING: This action is permanent. It will instantly erase the visitor's identity, their entire visit history, all saved photos, and any linked dependent records from the database.",
+    color: "bg-red-300 border-black font-bold text-black",
+  },
 ];
 
 const TutorialModal = ({ onClose }) => {
