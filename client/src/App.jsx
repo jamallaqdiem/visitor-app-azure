@@ -1037,9 +1037,6 @@ function App() {
         <h1 className="text-4xl font-extrabold text-blue-800 mb-2">
           The Salvation Army Social Services
         </h1>
-        <p className="text-lg text-blue-950 mb-4">
-          Catherine Booth House Visitors Tracking
-        </p>
         <button
           onClick={() => {
             const newState = !showHistory;
