@@ -1,7 +1,7 @@
 name: Backend Deploy
 on:
   push:
-    branches: [main]
+    branches: [main, feat-fix-deployment]
     paths: ["server/**"] # Only runs if  change server code
 
 jobs:

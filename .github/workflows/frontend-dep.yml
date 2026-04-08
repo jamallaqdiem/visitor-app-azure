@@ -1,7 +1,7 @@
 name: Frontend Deploy
 on:
   push:
-    branches: [main]
+    branches: [main, feat-fix-deployment]
   workflow_dispatch: # Allows you to run it manually for testing
 
 jobs:
