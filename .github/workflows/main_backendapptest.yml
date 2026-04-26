@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - main
+      - cleanup-remove-legacy-tests
   workflow_dispatch:
 
 jobs:
