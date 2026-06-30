@@ -4,6 +4,7 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const multer = require("multer");
 const dbService = require("./azureSqlService");
+const PORT = process.env.PORT || 3001;
 
 const app = express();
 
@@ -74,7 +75,6 @@ dbService
     console.log("Database connection pool initialized.");
     console.log("--- Starting Data Retention Compliance Cleanup Job ---");
     runDataComplianceCleanup(dbService);
-    const PORT = process.env.PORT || 3001;
     app.listen(PORT, () => {
       console.log(`🚀 Backend Server is LIVE on port ${PORT}`);
       console.log("Ready for frontend requests...");

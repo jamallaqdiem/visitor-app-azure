@@ -1,6 +1,5 @@
 const express = require("express");
 const path = require("path");
-const multer = require("multer");
 const { BlobServiceClient } = require("@azure/storage-blob");
 /**
  * Creates and configures a router for handling new visitor registrations.
@@ -42,7 +41,6 @@ function createRegistrationRouter(dbService, upload) {
       reason_for_visit,
       type,
       company_name,
-      mandatory_acknowledgment_taken,
       additional_dependents,
     } = req.body;
 

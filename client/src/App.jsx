@@ -82,17 +82,15 @@ function App() {
     submitColor: "bg-green-600 hover:bg-green-700",
   });
 
-  // --- Record Missed Visit Modal State ---
   const [showMissedVisitModal, setShowMissedVisitModal] = useState(false);
   const [missedEntryTime, setMissedEntryTime] = useState("");
 
   const getAuthHeaders = (isFormData = false) => {
-    //  we use your hardcoded SITE_ID or URL param
-    // Later, we use pull 'atlasToken' from local storage or Atlas login
+    // for now we use the url parameter for testing, however best option is to use jwt
     const token = localStorage.getItem("atlas_token");
 
     const headers = {
-      "x-site-id": SITE_ID, // Your backend still needs this for the SQL query
+      "x-site-id": SITE_ID, // for the sql query
     };
 
     // If  requires a Token, we add it here
@@ -181,7 +179,7 @@ function App() {
       fetchVisitors();
     }
 
-    // Set up interval for refreshing every 5000ms
+    // Set up interval for refreshing every 20000ms
     const intervalId = setInterval(() => {
       // Only refresh if we aren't currently looking at History or Registration
       if (!showHistory && !showRegistration && !selectedVisitor) {
@@ -419,7 +417,7 @@ function App() {
         setIsAgreementCheckedAdult(false);
         setIsAgreementCheckedChild(false);
         handleCancelAction(); // Go back to dashboard
-      }, 4000);
+      }, 3000);
 
       fetchVisitors(); // Refresh the list
     } catch (err) {
