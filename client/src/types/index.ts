@@ -8,6 +8,8 @@ export interface ErrorBoundaryProps {
   children: React.ReactNode;
   /** An optional fallback UI to render instead of the default error screen. */
   fallback?: React.ReactNode;
+  /** Controls the layout style depending on where the boundary is placed */
+  variant?: "screen" | "card" | "inline";
 }
 
 /**
@@ -18,4 +20,5 @@ export interface ErrorBoundaryState {
   hasError: boolean;
   /** Stores the actual Error object thrown by the application for debugging or logging. */
   error: Error | null;
+  retryCount: number;
 }

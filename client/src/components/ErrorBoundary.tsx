@@ -19,6 +19,7 @@ class ErrorBoundary extends React.Component<
       hasError: false,
       error: null,
       errorInfo: null,
+      retryCount: 0,
     };
   }
   // flip 'hasError' to true, and save the error to block the total white screen.
@@ -29,8 +30,37 @@ class ErrorBoundary extends React.Component<
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     console.error("🚨 UI Rendering Error:", error, errorInfo);
     this.setState({ errorInfo });
+
+    /* Enterprise Logging Hook:
+    const errorPayload = {
+      message: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack,
+      timestamp: new Date().toISOString(),
+      url: window.location.href,
+      
+    };
+
+    // Example: sendTelemetryToAzure(errorPayload);
+    */
   }
 
+  // Smart Recovery: If the app keeps crashing, stop trying soft resets and force a hard network reload to wipe out everything."
+  handleReset = () => {
+    if (this.state.retryCount > 0) {
+      // The bug is too big for a soft reset. Force a brutal, hard reload.
+      window.location.href = "/";
+      return;
+    }
+
+    // Try a soft reset first, but log that we attempted it once
+    this.setState((prevState) => ({
+      hasError: false,
+      error: null,
+      errorInfo: null,
+      retryCount: prevState.retryCount + 1,
+    }));
+  };
   render(): React.ReactNode {
     // Encapsulated Tailwind v4 layout configurations
     const styles = {
@@ -52,11 +82,16 @@ class ErrorBoundary extends React.Component<
     };
 
     if (this.state.hasError) {
-      // Allow custom parent fallback overrides or fall back to default design
-      if (this.props.fallback) {
-        return this.props.fallback;
-      }
+      if (this.props.fallback) return this.props.fallback;
 
+      // If it's an 'inline' boundary, render a minimal alert.
+      if (this.props.variant === "inline") {
+        return (
+          <div className="p-4 bg-red-50 text-red-700 border border-red-200 rounded-lg">
+            Component crashed.
+          </div>
+        );
+      }
       return (
         <div className={styles.layoutWrapper}>
           <div className={styles.cardContainer}>
@@ -80,12 +115,10 @@ class ErrorBoundary extends React.Component<
               </details>
             )}
 
-            <button
-              //Force a brutal, hard browser network refresh to completely wipe out any corrupt memory state and start fresh at the dashboard.
-              onClick={() => (window.location.href = "/")}
-              className={styles.actionButton}
-            >
-              Return to Dashboard
+            <button onClick={this.handleReset} className={styles.actionButton}>
+              {this.state.retryCount > 0
+                ? "Force Hard Reload"
+                : "Return to Dashboard"}
             </button>
           </div>
         </div>
