@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { CameraIcon, PersonIcon, PhoneIcon } from "./IconComponents";
+import { Camera, User, Phone } from "lucide-react";
 import Webcam from "react-webcam";
 
 const videoConstraints = {
@@ -110,7 +110,7 @@ const VisitorRegistrationForm = ({
           {/* First Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700">
-              <PersonIcon className="w-5 h-5" />
+              <User className="w-5 h-5" />
               First Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -126,7 +126,7 @@ const VisitorRegistrationForm = ({
           {/* Last Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700">
-              <PersonIcon className="w-5 h-5" />
+              <User className="w-5 h-5" />
               Last Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -170,7 +170,7 @@ const VisitorRegistrationForm = ({
           )}
           {/* Phone Number */}
           <div>
-            <PhoneIcon className="w-5 h-5" />
+            <Phone className="w-5 h-5" />
             <label className="block text-sm font-medium text-gray-700">
               Phone Number
             </label>
@@ -239,7 +239,7 @@ const VisitorRegistrationForm = ({
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <PersonIcon className="w-16 h-16 text-gray-500" />
+                <User className="w-16 h-16 text-gray-500" />
               )}
             </div>
             {/* 1. Button to show/hide the choice options */}
@@ -252,7 +252,7 @@ const VisitorRegistrationForm = ({
               }}
               className="flex items-center justify-center space-x-2 px-4 py-2 bg-purple-500 text-white font-semibold rounded-lg shadow-md hover:bg-purple-600 cursor-pointer transition-colors"
             >
-              <CameraIcon className="w-5 h-5" />
+              <Camera className="w-5 h-5" />
               <span>
                 {showPhotoChoice ? "Close Photo Options" : "Select Photo ID"}
               </span>

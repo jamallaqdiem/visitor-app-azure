@@ -1,5 +1,5 @@
 import React from "react";
-import { SearchIcon, PersonIcon } from "./IconComponents";
+import { Search } from "lucide-react";
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 // Function to format time for display
@@ -68,7 +68,7 @@ const VisitorsDashboard = ({
 
         <div className="flex flex-col sm:flex-row gap-3 mb-6">
           <div className="relative flex-grow">
-            <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input
               type="text"
               placeholder="Search by name (e.g., John Doe)..."
