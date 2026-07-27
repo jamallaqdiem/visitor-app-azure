@@ -96,13 +96,15 @@ async function executeQuery(querySql, params = [], retries = 3) {
 
       // 3. Check if the error is "Transient" (meaning it's worth retrying)
       const isNetworkError =
+        err.code === "EAI_AGAIN" ||
+        err.code === "ENOTFOUND" ||
         err.message.includes("closed") ||
         err.message.includes("connection") ||
         err.message.includes("timeout") ||
         err.message.includes("socket");
 
       if (isNetworkError && i < retries - 1) {
-        const delay = (i + 1) * 1000; // Wait 1s, then 2s
+        const delay = (i + 1) * 2000; // Wait 1s, then 4s
         console.warn(
           `⚠️ Connection lost. Retry ${i + 1}/${retries} in ${delay}ms...`,
         );

@@ -79,7 +79,7 @@ class ErrorBoundary extends React.Component<
       stackTrace: "mt-1 text-slate-500 whitespace-pre-wrap",
       actionButton:
         "w-full py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-all shadow-lg active:scale-95",
-    };
+    } as const;
 
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;

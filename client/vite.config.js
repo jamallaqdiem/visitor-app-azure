@@ -12,7 +12,7 @@ export default defineConfig({
     // Simulate a browser environment inside Node terminal using jsdom.
     environment: "jsdom",
     // Automatically run this setup file before every test execution to load the custom DOM matchers.
-    setupFiles: "./src/test/setup.ts",
+    setupFiles: "./src/test-setup/setup.ts",
   },
   server: {
     https: true,
