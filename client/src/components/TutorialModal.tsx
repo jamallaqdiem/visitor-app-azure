@@ -1,7 +1,55 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { X, ChevronRight, ChevronLeft } from "lucide-react";
 
-const steps = [
+export interface TutorialStep {
+  title: string;
+  description: string;
+  color: string;
+}
+
+export interface TutorialModalProps {
+  onClose: () => void;
+}
+
+const styles = {
+  overlay:
+    "fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[10000]",
+  modalCard:
+    "bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200",
+
+  // Header
+  header: "bg-indigo-700 p-4 flex justify-between items-center text-white",
+  headerTitle: "font-semibold text-sm",
+  closeButton: "hover:bg-indigo-600 p-1 rounded-full transition",
+
+  // Content Body
+  contentContainer: "p-8",
+  progressHeader:
+    "flex justify-between text-xs font-bold text-black mb-4 uppercase tracking-wider",
+  stepCard: "p-6 rounded-xl border-l-4 shadow-sm transition-all duration-300",
+  stepTitle: "text-xl font-bold text-gray-800 mb-3",
+  stepDescription: "text-gray-700 leading-relaxed text-sm",
+
+  // Progress Dots
+  dotsContainer: "flex justify-center gap-2 mt-8",
+  dotBase: "h-2 rounded-full transition-all duration-300",
+  dotActive: "bg-indigo-600 w-6",
+  dotInactive: "bg-gray-200 w-2",
+
+  // Footer
+  footer: "p-4 border-t bg-gray-50 flex justify-between items-center",
+  prevButton:
+    "flex items-center px-4 py-2 rounded-lg font-medium text-sm transition",
+  prevActive: "text-gray-600 hover:bg-gray-200",
+  prevDisabled: "text-gray-300 cursor-not-allowed",
+
+  nextButton:
+    "flex items-center px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm shadow-md transition",
+  finishButton:
+    "flex items-center px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-sm shadow-lg transition transform hover:scale-105",
+};
+
+const steps: TutorialStep[] = [
   {
     title: "Step 1: Always Search First",
     description:
@@ -55,33 +103,38 @@ const steps = [
   },
 ];
 
-const TutorialModal = ({ onClose }) => {
-  const [currentStep, setCurrentStep] = useState(0);
+export const TutorialModal: React.FC<TutorialModalProps> = ({ onClose }) => {
+  const [currentStep, setCurrentStep] = useState<number>(0);
 
-  const handleNext = () => {
+  const handleNext = (): void => {
     if (currentStep < steps.length - 1) setCurrentStep((prev) => prev + 1);
   };
 
-  const handlePrev = () => {
+  const handlePrev = (): void => {
     if (currentStep > 0) setCurrentStep((prev) => prev - 1);
   };
 
+  const isFirstStep = currentStep === 0;
+  const isLastStep = currentStep === steps.length - 1;
+
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[10000]">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+    <div className={styles.overlay}>
+      <div className={styles.modalCard}>
         {/* Header */}
-        <div className="bg-indigo-700 p-4 flex justify-between items-center text-white">
+        <div className={styles.header}>
+          <span className={styles.headerTitle}>Application Guide</span>
           <button
             onClick={onClose}
-            className="hover:bg-indigo-600 p-1 rounded-full transition"
+            aria-label="Close training modal"
+            className={styles.closeButton}
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Content Body */}
-        <div className="p-8">
-          <div className="flex justify-between text-xs font-bold text-black mb-4 uppercase tracking-wider">
+        <div className={styles.contentContainer}>
+          <div className={styles.progressHeader}>
             <span>
               Step {currentStep + 1} of {steps.length}
             </span>
@@ -91,24 +144,21 @@ const TutorialModal = ({ onClose }) => {
           </div>
 
           {/* Dynamic Step Card */}
-          <div
-            className={`p-6 rounded-xl border-l-4 shadow-sm transition-all duration-300 ${steps[currentStep].color}`}
-          >
-            <h2 className="text-xl font-bold text-gray-800 mb-3">
-              {steps[currentStep].title}
-            </h2>
-            <p className="text-gray-700 leading-relaxed text-sm">
+          <div className={`${styles.stepCard} ${steps[currentStep].color}`}>
+            <h2 className={styles.stepTitle}>{steps[currentStep].title}</h2>
+            <p className={styles.stepDescription}>
               {steps[currentStep].description}
             </p>
           </div>
 
           {/* Progress Dots */}
-          <div className="flex justify-center gap-2 mt-8">
+          <div className={styles.dotsContainer}>
+            {/* using (_) as unused as step object as we need only the index num to compar */}
             {steps.map((_, idx) => (
               <div
                 key={idx}
-                className={`h-2 w-2 rounded-full transition-all duration-300 ${
-                  idx === currentStep ? "bg-indigo-600 w-6" : "bg-gray-200"
+                className={`${styles.dotBase} ${
+                  idx === currentStep ? styles.dotActive : styles.dotInactive
                 }`}
               />
             ))}
@@ -116,31 +166,23 @@ const TutorialModal = ({ onClose }) => {
         </div>
 
         {/* Footer / Controls */}
-        <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
+        <div className={styles.footer}>
           <button
             onClick={handlePrev}
-            disabled={currentStep === 0}
-            className={`flex items-center px-4 py-2 rounded-lg font-medium text-sm transition ${
-              currentStep === 0
-                ? "text-gray-300 cursor-not-allowed"
-                : "text-gray-600 hover:bg-gray-200"
+            disabled={isFirstStep}
+            className={`${styles.prevButton} ${
+              isFirstStep ? styles.prevDisabled : styles.prevActive
             }`}
           >
             <ChevronLeft size={16} className="mr-1" /> Previous
           </button>
 
-          {currentStep === steps.length - 1 ? (
-            <button
-              onClick={onClose}
-              className="flex items-center px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-sm shadow-lg transition transform hover:scale-105"
-            >
+          {isLastStep ? (
+            <button onClick={onClose} className={styles.finishButton}>
               Finish Training
             </button>
           ) : (
-            <button
-              onClick={handleNext}
-              className="flex items-center px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm shadow-md transition"
-            >
+            <button onClick={handleNext} className={styles.nextButton}>
               Next Step <ChevronRight size={16} className="ml-1" />
             </button>
           )}
