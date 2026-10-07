@@ -1,8 +1,10 @@
 name: Frontend Deploy
 on:
   push:
-    branches: [main, cleanup-remove-legacy-tests]
-  workflow_dispatch: # Allows you to run it manually for testing
+    branches: [main]
+  pull_request:         
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build_and_deploy:
